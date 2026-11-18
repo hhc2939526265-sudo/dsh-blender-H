@@ -1,0 +1,52 @@
+# ---- Python / Blender Addon ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+eggs/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+
+# ---- 打包产物（保留 scripts，忽略输出压缩包）----
+*.zip
+release/
+packages/
+
+# ---- Blender 临时文件 ----
+*.blend
+*.blend1
+*.blend2
+*.autosave
+*.bpy_data
+render_output/
+*.png
+*.jpg
+*.jpeg
+*.exr
+!assets/**
+
+# ---- 日志与缓存 ----
+logs/
+*.log
+.cache/
+tmp/
+temp/
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- 本地敏感配置（不入库）----
+config/local.json
+config/secret.json
+.env
+.env.local

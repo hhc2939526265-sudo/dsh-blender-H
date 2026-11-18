@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DSH Blender 双向桥接</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- 顶部状态栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot" id="status-dot"></span>
+        <div>
+          <div class="brand-title">DSH Blender Bridge</div>
+          <div class="brand-sub" id="status-text">未连接</div>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <label class="field-inline">
+          <span>地址</span>
+          <input type="text" id="cfg-host" value="127.0.0.1" />
+        </label>
+        <label class="field-inline">
+          <span>端口</span>
+          <input type="number" id="cfg-port" value="8765" min="1024" max="65535" />
+        </label>
+        <label class="field-inline">
+          <span>Blender</span>
+          <input type="text" id="cfg-blender-path" list="blender-candidates" placeholder="自动扫描 / 手动指定" />
+          <datalist id="blender-candidates"></datalist>
+        </label>
+        <button id="btn-scan-blender" class="btn btn-ghost">扫描</button>
+        <button id="btn-connect" class="btn btn-primary">连接</button>
+        <button id="btn-disconnect" class="btn btn-ghost">断开</button>
+      </div>
+    </header>
+
+    <!-- 选项卡 -->
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="character">图片建模</button>
+      <button class="tab" data-tab="motion">视频动画 / 特效</button>
+      <button class="tab" data-tab="nl">自然语言</button>
+      <button class="tab" data-tab="material">材质渲染</button>
+      <button class="tab" data-tab="history">历史预设</button>
+      <button class="tab" data-tab="logs">日志</button>
+    </nav>
+
+    <main class="main">
+      <!-- 图片建模 -->
+      <section class="tab-pane active" data-pane="character">
+        <div class="grid two-col">
+          <div class="panel">
+            <h3>人物图片上传</h3>
+            <div class="dropzone" id="image-dropzone" data-kind="image">
+              <p>拖拽人物图片到此处，或点击选择</p>
+              <p class="hint">支持 JPG / PNG / WEBP，可多张</p>
+            </div>
+            <div class="preview-list" id="image-preview-list"></div>
+            <div class="row">
+              <label>建模精度
+                <select id="cfg-quality">
+                  <option value="low">低</option>
+                  <option value="medium" selected>中</option>
+                  <option value="high">高</option>
+                </select>
+              </label>
+            </div>
+            <button class="btn btn-primary" id="btn-build-character">生成 3D 角色并绑定</button>
+          </div>
+          <div class="panel">
+            <h3>结果预览</h3>
+            <div class="preview-stage" id="character-preview">
+              <span class="placeholder">渲染 / 回传结果将在此预览</span>
+            </div>
+            <div class="result-meta" id="character-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 视频动画 / 特效 -->
+      <section class="tab-pane" data-pane="motion">
+        <div class="grid two-col">
+          <div class="panel">
+            <h3>参考视频上传</h3>
+            <div class="dropzone" id="video-dropzone" data-kind="video">
+              <p>拖拽动作 / 特效视频到此处，或点击选择</p>
+              <p class="hint">MP4 / WEBM / MOV，自动分片传输 + MD5 校验</p>
+            </div>
+            <div class="preview-list" id="video-preview-list"></div>
+            <div class="row">
+              <label>复刻类型
+                <select id="motion-kind">
+                  <option value="mocap">动作捕捉复刻</option>
+                  <option value="effect">特效还原</option>
+                  <option value="both">动作 + 特效</option>
+                </select>
+              </label>
+              <label>置信度 <input type="number" id="cfg-confidence" value="0.6" min="0" max="1" step="0.05" /></label>
+              <label>特效强度 <input type="number" id="cfg-effect" value="0.8" min="0" max="1" step="0.05" /></label>
+            </div>
+            <button class="btn btn-primary" id="btn-mocap">解析并复刻到角色</button>
+          </div>
+          <div class="panel">
+            <h3>动画 / 特效预览</h3>
+            <div class="preview-stage" id="motion-preview">
+              <span class="placeholder">动画关键帧 / 特效回传结果将在此预览</span>
+            </div>
+            <div class="result-meta" id="motion-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 自然语言 -->
+      <section class="tab-pane" data-pane="nl">
+        <div class="panel">
+          <h3>自然语言建模指令</h3>
+          <textarea id="nl-prompt" rows="5"
+            placeholder="例如：在场景中央生成一个倒角立方体，阵列 3 个，金属材质，绕 Z 轴旋转一周"></textarea>
+          <div class="row">
+            <label><input type="checkbox" id="nl-dryrun" /> 仅解析不执行</label>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary" id="btn-nl-dispatch">解析并执行</button>
+            <button class="btn btn-ghost" id="btn-nl-example">填充示例提示词</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>解析结果</h3>
+          <pre class="code-block" id="nl-result">等待输入…</pre>
+        </div>
+      </section>
+
+      <!-- 材质渲染 -->
+      <section class="tab-pane" data-pane="material">
+        <div class="grid two-col">
+          <div class="panel">
+            <h3>材质与渲染参数</h3>
+            <div class="row">
+              <label>渲染引擎
+                <select id="cfg-engine">
+                  <option value="EEVEE" selected>Eevee</option>
+                  <option value="CYCLES">Cycles</option>
+                </select>
+              </label>
+              <label>采样 <input type="number" id="cfg-samples" value="64" min="8" max="4096" /></label>
+            </div>
+            <div class="row">
+              <label>宽 <input type="number" id="cfg-res-x" value="1920" /></label>
+              <label>高 <input type="number" id="cfg-res-y" value="1080" /></label>
+            </div>
+            <div class="row">
+              <button class="btn btn-primary" id="btn-render">执行渲染并回传</button>
+              <button class="btn btn-ghost" id="btn-export-asset">回传当前资产</button>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>渲染结果</h3>
+            <div class="preview-stage" id="render-preview">
+              <span class="placeholder">成品图 / 视频将在此预览</span>
+            </div>
+            <div class="result-meta" id="render-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 历史预设 -->
+      <section class="tab-pane" data-pane="history">
+        <div class="panel">
+          <h3>内置场景模板</h3>
+          <div class="preset-grid" id="preset-list"></div>
+        </div>
+        <div class="panel">
+          <h3>执行历史</h3>
+          <div class="history-list" id="history-list"></div>
+        </div>
+      </section>
+
+      <!-- 日志 -->
+      <section class="tab-pane" data-pane="logs">
+        <div class="panel">
+          <div class="row">
+            <label>级别筛选
+              <select id="log-filter">
+                <option value="DEBUG">全部</option>
+                <option value="INFO" selected>信息及以上</option>
+                <option value="WARNING">警告及以上</option>
+                <option value="ERROR">仅错误</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost" id="btn-export-log">导出日志</button>
+            <button class="btn btn-ghost" id="btn-clear-log">清空日志</button>
+          </div>
+          <pre class="code-block log-block" id="log-panel"></pre>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部控制条 -->
+    <footer class="statusbar">
+      <span id="stat-pending">排队 0</span>
+      <span id="stat-success">成功 0</span>
+      <span id="stat-failed">失败 0</span>
+      <span id="stat-provider">AI 后端: -</span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost" id="btn-pause">暂停队列</button>
+      <button class="btn btn-danger" id="btn-stop">停止当前任务</button>
+    </footer>
+  </div>
+
+  <input type="file" id="file-input-image" accept="image/jpeg,image/png,image/webp" multiple hidden />
+  <input type="file" id="file-input-video" accept="video/mp4,video/webm,video/quicktime" hidden />
+
+  <script src="js/md5.js"></script>
+  <script src="js/protocol.js"></script>
+  <script src="js/dsh_adapter.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/client.js"></script>
+  <script src="js/transfer.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

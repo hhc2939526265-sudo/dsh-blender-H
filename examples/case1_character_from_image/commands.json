@@ -1,0 +1,38 @@
+{
+  "case": "case1_character_from_image",
+  "title": "单张人物图片生成 3D 角色 + 自动绑定",
+  "steps": [
+    {
+      "cmd_type": "transfer.begin",
+      "payload": {
+        "file_id": "demo_char_001",
+        "filename": "character.jpg",
+        "total_size": 0,
+        "md5": "<上传时由客户端计算>",
+        "chunk_count": 0
+      },
+      "note": "登记图片传输会话；分片由客户端按 64KB 自动切分补发"
+    },
+    {
+      "cmd_type": "pipeline.character",
+      "payload": {
+        "image_paths": ["<transfer.end 回执中的 path>"],
+        "quality": "high"
+      },
+      "note": "AI 解析体型 / 五官 / 服装 / 发型 → 装配网格 → 预处理 → PBR → 骨骼绑定"
+    },
+    {
+      "cmd_type": "character.shape_keys",
+      "payload": {
+        "object": "Character_Body",
+        "shape_keys": []
+      },
+      "note": "可选：补充自定义面部形状键；留空使用默认 50+ 清单"
+    },
+    {
+      "cmd_type": "export.asset",
+      "payload": { "objects": [] },
+      "note": "可选：把生成角色导出 glb 回传 DSH 存档"
+    }
+  ]
+}

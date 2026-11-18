@@ -1,0 +1,262 @@
+# 开发接口文档
+
+## 一、通信协议
+
+### 1.1 连接
+
+- 传输：本地 WebSocket 长连接，默认 `ws://127.0.0.1:8765`
+- 编码：UTF-8 JSON 文本帧
+- 心跳：应用层 `system.heartbeat`，30s 间隔；服务端回 `system.pong`；超时 10s 判定断线
+- 握手：连接建立后客户端发送 `system.handshake`，服务端回执携带服务端版本与已注册指令清单
+
+### 1.2 消息信封（固定 6 字段）
+
+```json
+{
+  "cmd_id": "uuid-v4",
+  "cmd_type": "mesh.add_primitive",
+  "payload": { },
+  "status": "PENDING | RUNNING | SUCCESS | FAILED | CANCELED",
+  "result": { },
+  "error": { "code": "", "message": "", "detail": "" }
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| cmd_id | string | 指令唯一 ID，回执原样带回，用于 Promise 关联 |
+| cmd_type | string | 指令类型，见下方指令集 |
+| payload | object | 参数体，结构按指令定义 |
+| status | string | 执行状态枚举 |
+| result | object | 成功返回结果；失败为空对象 |
+| error | object | `code / message / detail`，无错误时为空串 |
+
+### 1.3 错误码
+
+| code | 含义 |
+|---|---|
+| E_PROTOCOL | 信封结构 / 字段非法 |
+| E_JSON | 报文不是合法 JSON |
+| E_PARAM | 缺少必填参数或类型错误 |
+| E_UNKNOWN_CMD | 未注册的指令类型 |
+| E_EXEC | 处理器执行异常 |
+| E_FATAL | 顶层兜底异常 |
+| E_TRANSFER | 分片缺失 / MD5 校验失败 |
+
+### 1.4 批量队列
+
+- 指令按 FIFO 入队；`serial` 每节拍执行 1 条，`parallel` 每节拍最多 `max_parallel` 条；
+- 单条指令超时 `command_timeout`（默认 120s）；
+- 回执 `result._elapsed_ms` 记录执行耗时。
+
+## 二、分片传输协议
+
+### 2.1 上行（客户端 → Blender）
+
+| 指令 | payload | 回执 result |
+|---|---|---|
+| transfer.begin | `file_id, filename, total_size, md5, chunk_count` | `resumed, missing[], received, chunk_count` |
+| transfer.chunk | `file_id, index, data(base64)` | `ok, received, chunk_count` |
+| transfer.end | `file_id` | `ok, path, filename, size, md5` |
+
+- 分片大小默认 64KB；重连后 `begin` 返回缺失索引，仅补发缺失分片；
+- `end` 合并后按 MD5 校验，不一致则删除临时文件并返回 `E_TRANSFER`。
+
+### 2.2 下行（Blender → 客户端）
+
+Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ 多帧 `transfer.chunk`
+→ `transfer.end`；客户端按 `file_id` 重组为 Blob 并生成预览。
+
+## 三、指令集大全
+
+### 3.1 系统 / 传输
+
+| cmd_type | 说明 | 关键参数 |
+|---|---|---|
+| system.handshake | 握手能力协商 | - |
+| system.heartbeat | 心跳 | - |
+| system.stop | 清空排队指令 | - |
+| system.shutdown | 关闭服务 | - |
+| transfer.begin / chunk / end | 分片传输 | 见 2.1 |
+
+### 3.2 建模指令（26 种）
+
+| cmd_type | 说明 | 必填参数 |
+|---|---|---|
+| mesh.add_primitive | 基础几何体 | type（cube/sphere/ico_sphere/cylinder/cone/torus/plane/grid/monkey） |
+| mesh.boolean | 布尔运算 | target, operand, operation |
+| mesh.extrude | 挤出 | object, amount |
+| mesh.loop_cut | 环切 | object, cuts |
+| mesh.bevel | 倒角 | object, width, segments |
+| mesh.array | 阵列 | object, count |
+| mesh.curve | 曲线 | points[[x,y,z]] |
+| mesh.solidify | 实体化 | object, thickness |
+| mesh.remesh | 重网格化 | object, voxel_size |
+| mesh.inset | 内插面 | object, thickness |
+| mesh.subdivide | 细分 | object, levels |
+| mesh.decimate | 面数精简 | object, ratio |
+| mesh.recalc_normals | 法线统一 | object |
+| mesh.origin_set | 原点归位 | object, target |
+| mesh.align | 吸附对齐 | object, target, axis |
+| mesh.flip_normals | 法线翻转 | object |
+| mesh.rename | 重命名 | object, new_name |
+| mesh.batch_generate | 参数化批量生成 | count, type, location_range, scale_range |
+| mesh.delete | 删除对象 | objects[] |
+| mesh.select | 选择 | objects[] / mode=ALL |
+| mesh.mirror | 镜像 | object, axis |
+| mesh.weld | 按距离合并顶点 | object, distance |
+| mesh.smooth | 平滑着色 | object |
+| mesh.uv_unwrap | UV 自动展开 | object |
+| mesh.apply_all | 应用全部修改器 | object |
+| mesh.transform | 变换 | object, location/rotation/scale |
+
+### 3.3 角色建模
+
+| cmd_type | 说明 | 必填参数 |
+|---|---|---|
+| character.build | 图片驱动建模 | image_paths[], quality |
+| character.rig | 骨骼自动绑定 | object |
+| character.shape_keys | 写入面部形状键 | object, shape_keys[] |
+| character.uv_bake | 参考图 PBR 烘焙 | object, image_path |
+
+### 3.4 动画指令（8 种）
+
+| cmd_type | 说明 | 必填参数 |
+|---|---|---|
+| anim.keyframe | 位移 / 旋转 / 缩放关键帧 | object, mode, frames[[frame, values]] |
+| anim.rig_auto | 自动骨骼绑定 | object, skeleton |
+| anim.loop_cycle | 走 / 跑 / 跳循环 | object, cycle |
+| anim.physics | 刚体 / 柔体 / 布料 / 流体 | object, kind |
+| anim.path_constraint | 路径约束 | object, points[] |
+| anim.mocap_apply | 动捕轨迹对齐 | object, motion |
+| anim.timing | 全局 / 局部变速 | object, speed |
+| anim.easing | 缓动曲线 | object, easing |
+
+### 3.5 特效指令（5 种）
+
+| cmd_type | 说明 |
+|---|---|
+| effect.particle | 粒子系统（数量 / 速度 / 生命周期 / 颜色渐变） |
+| effect.glow | 发光材质 + 合成辉光 |
+| effect.fluid | 流体域参数 |
+| effect.deform | 晶格 / 形状键形变关键帧 |
+| effect.camera_match | 摄像机动画（推拉摇移 / 环绕） |
+
+### 3.6 材质指令（6 种）
+
+| cmd_type | 说明 | 必填参数 |
+|---|---|---|
+| material.pbr_generate | PBR 节点树生成 | object, base_color/metallic/roughness/alpha |
+| material.batch_replace | 批量替换材质 | objects[], material_name |
+| material.batch_adjust | 批量调整参数 | objects[], params |
+| material.preset_save | 保存材质预设 | name, object |
+| material.preset_load | 加载材质预设 | name, object |
+| material.duplicate | 复制材质并挂载目标 | object（可选 target/new_name） |
+
+### 3.7 渲染 / 场景 / 导出
+
+| cmd_type | 说明 |
+|---|---|
+| render.switch_engine | 切换 Eevee / Cycles |
+| render.settings | 分辨率 / 采样 / 帧范围 / 输出路径 |
+| render.execute | 执行渲染并回传成品 |
+| scene.backup | 场景备份 |
+| scene.rollback | 回滚备份 |
+| scene.export / scene.import | 工程导出 / 导入 |
+| export.asset | 网格资产 glb 回传 |
+| export.animation | 骨骼轨迹 JSON + glb 回传 |
+| export.material | 材质参数回传 |
+| export.scene | 全场景 glb 回传 |
+| nl.dispatch | 自然语言解析并执行 |
+| pipeline.character | 图片 → 角色一键流水线 |
+| pipeline.video | 视频 → 动作 + 特效流水线 |
+| pipeline.iterate | 资产回传进入下一轮迭代 |
+
+## 四、多模态数据格式
+
+### 4.1 角色规格（AI → Blender）
+
+```json
+{
+  "quality": "medium",
+  "proportions": { "height": 1.75, "shoulder_width": 0.45 },
+  "features": { "face": "oval", "eyes": "normal" },
+  "clothing": [{ "part": "top", "category": "cloth", "color": [0.3,0.3,0.3,1], "roughness": 0.8 }],
+  "hair": { "style": "short", "color": [0.05,0.04,0.03,1] },
+  "skin_color": [0.82, 0.66, 0.55, 1],
+  "shape_keys": ["jaw_open", "brow_inner_up"]
+}
+```
+
+### 4.2 动作规格
+
+```json
+{
+  "fps": 24,
+  "joints": ["hips", "spine", "chest", "neck", "head", "...21+"],
+  "frames": [{ "index": 0, "rotations": { "hips": [0,0,0] }, "positions": { "hips": [0,0,0.9] } }],
+  "confidence": 0.6,
+  "loop": true
+}
+```
+
+### 4.3 特效规格
+
+```json
+{
+  "particles": [{ "count": 200, "speed": 1.0, "life": 2.0, "color_start": [1,0.6,0.2,1], "color_end": [0.2,0.4,1,1] }],
+  "glow": [{ "intensity": 1.5, "color": [1,0.7,0.3,1], "motion": "radial" }],
+  "fluid": [{ "shape": "smoke", "velocity": 0.6, "collision": true }],
+  "deform": [{ "amplitude": 0.2, "timing": [0, 24] }],
+  "camera": { "trajectory": "push", "distance": 3.0, "fov": 50 }
+}
+```
+
+## 五、外部 AI 服务对接
+
+推理网关接收如下 JSON（`POST {endpoint}`），返回 `{ "result": {...规格字典} }` 或
+`{ "error": "..." }`：
+
+```json
+{ "method": "analyze_character", "payload": { "images": [], "params": {} } }
+```
+
+| method | 入参 | 返回 |
+|---|---|---|
+| analyze_character | images[], params | 角色规格 |
+| analyze_motion | video, params | 动作规格 |
+| analyze_effect | video, params | 特效规格 |
+| parse_nl | prompt, params | `{ commands: [{ cmd_type, payload }] }` |
+
+## 六、二次扩展开发
+
+### 6.1 新增一条建模指令
+
+1. 在 `handlers/modeling.py` 编写处理器：`def my_op(payload, ctx) -> dict`；
+2. 文件底部 `register()` 中 `dispatcher.register("mesh.my_op", my_op, ["必填参数"])`；
+3. 在 `core/protocol.py` 的 `CommandType` 增加常量；
+4. DSH 端按信封结构直接 `client.send("mesh.my_op", payload)`。
+
+### 6.2 新增 AI 后端
+
+1. 继承 `ai/base.py::BaseAIProvider`，实现四个解析方法；
+2. 在 `ai/registry.py` 注册新后端名；
+3. 配置 `ai.provider` 切换；远端异常自动降级 Mock。
+
+### 6.3 目录分层
+
+```
+通信层  core/ws_server.py、core/queue.py
+协议层  core/protocol.py、core/transfer.py
+解析层  ai/
+执行层  handlers/
+适配层  compat/
+工具层  utils/
+UI 层   operators.py、panel.py
+```
+
+### 6.4 约束
+
+- 业务代码禁止硬编码魔法数字，统一走 `config/default_config.py`；
+- 处理器异常必须收敛为 FAILED 回执，不得抛到网络线程；
+- 仅使用 Blender 内置库与标准库；必需依赖须内置静默安装逻辑。

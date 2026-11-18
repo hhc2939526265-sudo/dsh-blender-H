@@ -1,0 +1,47 @@
+{
+  "case": "case2_mocap_effects",
+  "title": "参考视频复刻行走动画 + 光效粒子特效",
+  "steps": [
+    {
+      "cmd_type": "transfer.begin",
+      "payload": {
+        "file_id": "demo_walk_001",
+        "filename": "walk.mp4",
+        "total_size": 0,
+        "md5": "<上传时由客户端计算>",
+        "chunk_count": 0
+      }
+    },
+    {
+      "cmd_type": "pipeline.video",
+      "payload": {
+        "video_path": "<transfer.end 回执中的 path>",
+        "kind": "both",
+        "confidence": 0.6,
+        "effect_strength": 0.8
+      },
+      "note": "动作轨迹对齐骨架 + 粒子 / 辉光 / 流体 / 形变 / 镜头规格映射"
+    },
+    {
+      "cmd_type": "effect.camera_match",
+      "payload": {
+        "camera": { "trajectory": "push", "distance": 3.0, "fov": 50.0 },
+        "end_frame": 24
+      },
+      "note": "可选：覆盖默认镜头轨迹为推轨"
+    },
+    {
+      "cmd_type": "render.switch_engine",
+      "payload": { "engine": "EEVEE" }
+    },
+    {
+      "cmd_type": "render.settings",
+      "payload": { "resolution": [1920, 1080], "samples": 64 }
+    },
+    {
+      "cmd_type": "render.execute",
+      "payload": { "animation": false },
+      "note": "渲染完成后成品图分片回传 DSH 预览"
+    }
+  ]
+}

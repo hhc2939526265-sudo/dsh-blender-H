@@ -1,0 +1,57 @@
+{
+  "case": "case3_roundtrip_iteration",
+  "title": "Blender 修改后回传 DSH 二次优化迭代全流程",
+  "rounds": [
+    {
+      "iteration": 1,
+      "steps": [
+        {
+          "cmd_type": "pipeline.iterate",
+          "payload": { "iteration": 1 },
+          "note": "导出当前网格 glb + 骨骼轨迹 JSON，分片回传 DSH"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "steps": [
+        {
+          "cmd_type": "mesh.bevel",
+          "payload": { "object": "Character_Body", "width": 0.03, "segments": 3 },
+          "note": "AI 优化：边缘倒角"
+        },
+        {
+          "cmd_type": "material.batch_adjust",
+          "payload": {
+            "objects": ["Character_Body"],
+            "params": { "roughness": 0.5, "metallic": 0.1 }
+          },
+          "note": "AI 优化：材质参数调整"
+        },
+        {
+          "cmd_type": "anim.timing",
+          "payload": { "object": "Character_Rig", "speed": 1.0 },
+          "note": "AI 优化：动画节奏微调"
+        },
+        {
+          "cmd_type": "pipeline.iterate",
+          "payload": { "iteration": 2 }
+        }
+      ]
+    },
+    {
+      "iteration": 3,
+      "steps": [
+        {
+          "cmd_type": "mesh.subdivide",
+          "payload": { "object": "Character_Body", "levels": 1 },
+          "note": "AI 优化：细节细分"
+        },
+        {
+          "cmd_type": "pipeline.iterate",
+          "payload": { "iteration": 3 }
+        }
+      ]
+    }
+  ]
+}

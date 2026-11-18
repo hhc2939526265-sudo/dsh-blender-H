@@ -60,6 +60,7 @@ class Bridge:
         self.queue = CommandQueue(
             mode=config.get("queue_mode", "serial"),
             max_parallel=int(config.get("max_parallel", 2)),
+            command_timeout=float(config.get("command_timeout", 120)),
         )
 
         self.ws: Optional[WSServer] = None

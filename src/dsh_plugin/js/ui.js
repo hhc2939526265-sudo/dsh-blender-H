@@ -437,8 +437,10 @@
       this.store.history.forEach((h) => {
         const item = document.createElement("div");
         item.className = "history-item";
-        item.innerHTML = `<span class="cmd">${h.cmd}</span>
-          <span class="status-${h.status}">${h.status}</span>
+        const cmd = this._esc(h.cmd);
+        const status = this._esc(h.status);
+        item.innerHTML = `<span class="cmd">${cmd}</span>
+          <span class="status-${status}">${status}</span>
           <span>${new Date(h.time).toLocaleTimeString()}</span>`;
         box.appendChild(item);
       });

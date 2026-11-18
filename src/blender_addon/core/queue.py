@@ -15,38 +15,54 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections import deque
 from typing import Any, Deque, Dict, Optional, Tuple
 
 
 class CommandQueue:
-    """线程安全的指令等待队列。"""
+    """
+    线程安全的指令等待队列。
 
-    def __init__(self, mode: str = "serial", max_parallel: int = 2):
+    超时说明：``command_timeout`` 仅作为**排队等待超时**——条目在队列中等待
+    超过该时长即被丢弃并计入 dropped。Blender 算子必须在主线程顺序落地，
+    主线程不可抢占，正在执行的指令无法被中途中断；真正的执行超时需配合后台
+    线程执行模型，当前版本不做伪实现。
+    """
+
+    def __init__(self, mode: str = "serial", max_parallel: int = 2,
+                 command_timeout: float = 120.0):
         self.mode = mode
         self.max_parallel = max(1, int(max_parallel))
-        self._buf: Deque[Tuple[str, Dict[str, Any]]] = deque()
+        self.command_timeout = float(command_timeout)
+        self._buf: Deque[Tuple[str, Dict[str, Any], float]] = deque()
         self._lock = threading.Lock()
         self._dropped = 0
 
     def enqueue(self, conn_id: str, message: Dict[str, Any]) -> None:
-        """入队一条待执行指令。"""
+        """入队一条待执行指令，记录入队时间戳。"""
         with self._lock:
-            self._buf.append((conn_id, message))
+            self._buf.append((conn_id, message, time.monotonic()))
 
     def drain(self, batch_limit: Optional[int] = None):
         """
-        取出本节拍待执行条目。
+        取出本节拍待执行条目；先剔除等待超时的陈旧条目。
 
         :return: 列表 ``[(conn_id, message), ...]``
         """
         limit = batch_limit or (1 if self.mode == "serial" else self.max_parallel)
+        now = time.monotonic()
         with self._lock:
+            # 剔除排队超时条目（队首连续超时即丢弃，避免陈旧指令长期占位）
+            while self._buf and (now - self._buf[0][2]) > self.command_timeout:
+                self._buf.popleft()
+                self._dropped += 1
             items = []
             for _ in range(limit):
                 if not self._buf:
                     break
-                items.append(self._buf.popleft())
+                conn_id, message, _ts = self._buf.popleft()
+                items.append((conn_id, message))
         return items
 
     def pending_count(self) -> int:

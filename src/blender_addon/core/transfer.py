@@ -36,14 +36,28 @@ class TransferSession:
         self.chunk_count = chunk_count
         self.save_dir = save_dir
         self.chunks: Dict[int, bytes] = {}
+        self.received_bytes = 0
         self.created_at = __import__("time").time()
 
     def missing_indexes(self) -> List[int]:
         """返回尚未收到的分片索引列表。"""
         return [i for i in range(self.chunk_count) if i not in self.chunks]
 
-    def add_chunk(self, index: int, data: bytes) -> None:
+    def add_chunk(self, index: int, data: bytes, max_chunk_bytes: int) -> None:
+        """
+        登记一个分片，做单分片大小与累计字节硬校验。
+
+        :raises ValueError: 单分片超限，或累计字节超出登记的 total_size
+        """
+        if len(data) > max_chunk_bytes:
+            raise ValueError(f"单分片超出大小上限 {max_chunk_bytes} 字节")
+        # 断点续传重复补发同一索引时，先扣减旧分片字节，避免重复计数
+        old = self.chunks.get(index)
+        new_total = self.received_bytes - (len(old) if old else 0) + len(data)
+        if self.total_size > 0 and new_total > self.total_size:
+            raise ValueError("累计接收字节超出登记的文件总大小")
         self.chunks[index] = data
+        self.received_bytes = new_total
 
     def is_complete(self) -> bool:
         """分片索引集合必须恰好覆盖 0..chunk_count-1，防止索引错位漏片。"""
@@ -142,9 +156,15 @@ class TransferManager:
             if not (0 <= index < session.chunk_count):
                 return {"file_id": file_id, "ok": False,
                         "error": f"分片索引越界: {index}（0~{session.chunk_count - 1}）"}
-            session.add_chunk(index, data)
+            try:
+                session.add_chunk(index, data, self.chunk_size)
+            except ValueError as exc:
+                # 大小超限：丢弃整个会话，避免脏分片占用内存
+                self._sessions.pop(file_id, None)
+                return {"file_id": file_id, "ok": False, "error": str(exc)}
             return {"file_id": file_id, "ok": True,
                     "received": len(session.chunks),
+                    "received_bytes": session.received_bytes,
                     "chunk_count": session.chunk_count}
 
     def finish(self, payload: Dict[str, Any]) -> Dict[str, Any]:

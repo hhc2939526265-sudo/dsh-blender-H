@@ -2,6 +2,16 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.2] - 2026-11-18
+
+### Fixed
+- 分片会话新增累计接收字节统计：单分片大小超过分片上限、或累计字节超出登记 `total_size` 时拒绝并清理脏会话，回执附带 `received_bytes`。
+- 前端历史条目的指令名与状态标签统一经 HTML 转义后再写入页面，避免潜在注入。
+
+### Changed
+- `command_timeout` 落地为**排队等待超时**：条目在队列中等待超时即被丢弃并计入 dropped；文档明确标注 Blender 主线程不可抢占，正在执行的指令无法中途中断，执行超时需待后台线程模型就绪后实现。
+- 文档补充算子前缀白名单的生产部署建议；测试新增排队超时与传输字节边界用例（46 个用例全部通过）。
+
 ## [1.1.1] - 2026-11-18
 
 ### Fixed
@@ -48,7 +58,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.2
 [1.1.1]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.1
 [1.1.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.0
 [1.0.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.0.0

@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Blender](https://img.shields.io/badge/Blender-4.2%20LTS%20~%205.3-green.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.1.1-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.2-orange.svg)](CHANGELOG.md)
 
 ---
 
@@ -66,9 +66,9 @@ dsh-blender-H/
 git clone https://github.com/hhc2939526265-sudo/dsh-blender-H.git
 ```
 
-1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.1.zip` →
+1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.2.zip` →
    Blender 偏好设置 → 插件 → 从磁盘安装 → 勾选启用 → 侧边栏 `DSH Bridge` 启动服务。
-2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.1.zip` →
+2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.2.zip` →
    DSH 插件管理本地安装 → 启用面板。
 3. **连接使用**：两端地址端口保持一致（默认 `127.0.0.1:8765`）→ 点击连接 →
    上传图片 / 视频或输入提示词开始生产。
@@ -94,6 +94,12 @@ powershell -ExecutionPolicy Bypass -File scripts/package_all.ps1
 
 - 建模指令 26 种｜动画指令 8 种｜材质指令 6 种｜特效指令 5 种｜插件生态指令 4 种
 - 角色 / 渲染 / 场景 / 导出 / 流水线 / 自然语言指令若干，完整清单见 [docs/API.md](docs/API.md)
+
+## 已知限制
+
+- **真机回归待验收**：当前自动化测试以桩化方式覆盖参数守卫、路径校验、传输边界与算子策略；真实 Blender 4.2 ~ 5.3 内各算子 / 修改器 / 粒子系统的实际行为需在真机跑通 `examples/` 三个演示案例后确认。
+- **执行超时不可中断**：指令在 Blender 主线程顺序落地，主线程不可抢占；`command_timeout` 仅控制排队等待时长，正在执行的指令无法中途取消。
+- **AI 为可插拔抽象**：默认 Mock 离线兜底；真实人物重建 / 动作复刻 / 特效还原度取决于接入的外部推理服务。
 
 ## FAQ
 

@@ -50,7 +50,7 @@
 ### 1.4 批量队列
 
 - 指令按 FIFO 入队；`serial` 每节拍执行 1 条，`parallel` 每节拍最多 `max_parallel` 条；
-- 单条指令超时 `command_timeout`（默认 120s）；
+- 排队等待超时 `command_timeout`（默认 120s）：条目在队列中等待超时即被丢弃；Blender 主线程不可抢占，正在执行的指令无法中途中断；
 - 回执 `result._elapsed_ms` 记录执行耗时。
 
 ## 二、分片传输协议

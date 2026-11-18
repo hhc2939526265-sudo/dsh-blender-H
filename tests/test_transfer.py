@@ -64,6 +64,25 @@ class TestTransfer(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertEqual(res["error"], "MD5 校验失败")
 
+    def test_oversized_single_chunk_rejected(self):
+        # 单分片超过 chunk_size（1024）→ 拒绝并清理会话
+        big = b"x" * 2048
+        self.mgr.begin({"file_id": "f4", "filename": "b.dat",
+                        "total_size": 2048, "md5": "0" * 32, "chunk_count": 2})
+        res = self.mgr.add_chunk({"file_id": "f4", "index": 0,
+                                  "data": base64.b64encode(big).decode()})
+        self.assertFalse(res["ok"])
+        self.assertNotIn("f4", self.mgr._sessions)
+
+    def test_accumulated_bytes_exceed_total_rejected(self):
+        # 累计字节超出登记 total_size → 拒绝并清理会话
+        self.mgr.begin({"file_id": "f5", "filename": "b.dat",
+                        "total_size": 100, "md5": "0" * 32, "chunk_count": 1})
+        res = self.mgr.add_chunk({"file_id": "f5", "index": 0,
+                                  "data": base64.b64encode(b"x" * 200).decode()})
+        self.assertFalse(res["ok"])
+        self.assertNotIn("f5", self.mgr._sessions)
+
     def test_split_file(self):
         path = os.path.join(self.tmp, "src.bin")
         data = os.urandom(5000)

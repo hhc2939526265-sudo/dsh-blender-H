@@ -49,7 +49,10 @@ DEFAULT_CONFIG = {
     # ---- 指令执行 ----
     "queue_mode": "serial",          # serial（串行）/ parallel（并行）
     "max_parallel": 2,                # 并行模式下最大并发执行数
-    "command_timeout": 120,           # 单条指令超时（秒，预留：主线程不可抢占，用于并行调度裁剪）
+    # 指令排队等待超时（秒）：条目在队列中等待超过该时长即被丢弃；
+    # 注意 Blender 主线程不可抢占，正在执行的指令无法被中途中断，执行超时
+    # 需待后台线程执行模型就绪后落地，当前不提供执行中断能力。
+    "command_timeout": 120,
     "auto_backup": True,              # 复杂操作前自动备份场景
     "max_backup_slots": 5,            # 场景备份槽位上限（环形覆盖）
 

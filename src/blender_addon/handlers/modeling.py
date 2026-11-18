@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import math
 import bpy
 import random
 from typing import Any, Dict, List
@@ -409,6 +410,143 @@ def transform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 27. 复制对象（角色 / 道具复用）
+# ---------------------------------------------------------------------------
+def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    linked = bool(payload.get("linked", False))
+    new_obj = obj.copy()
+    if not linked:
+        new_obj.data = obj.data.copy()
+    bpy.context.collection.objects.link(new_obj)
+    new_obj.name = H.unique_name(payload.get("name", f"{obj.name}_dup"))
+    H.set_transform(new_obj, payload)
+    return {"source": obj.name, "object": new_obj.name, "linked": linked}
+
+
+# ---------------------------------------------------------------------------
+# 28. 合并多对象到目标（角色部件 / 场景道具整合）
+# ---------------------------------------------------------------------------
+def join(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    target = H.require_object(payload["object"])
+    members = [m for m in H.list_objects(payload.get("objects")) if m != target]
+    version_compat.set_active(target)
+    for m in members:
+        m.select_set(True)
+    bpy.ops.object.join()
+    return {"object": target.name, "joined": [m.name for m in members]}
+
+
+# ---------------------------------------------------------------------------
+# 29. 按松散块分离
+# ---------------------------------------------------------------------------
+def separate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    sep_type = payload.get("type", "LOOSE")
+    if sep_type not in ("LOOSE", "MATERIAL", "SELECTION"):
+        raise ValueError(f"分离类型非法: {sep_type}（LOOSE / MATERIAL / SELECTION）")
+    version_compat.set_active(obj)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.separate(type=sep_type)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    return {"object": obj.name, "type": sep_type}
+
+
+# ---------------------------------------------------------------------------
+# 30. 螺旋修改器（螺纹 / 卷曲线条 / 角色装饰）
+# ---------------------------------------------------------------------------
+def screw(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mod = H.add_modifier(obj, "SCREW", "screw")
+    mod.angle = float(payload.get("angle", 2 * math.pi))
+    mod.steps = int(payload.get("steps", 16))
+    mod.iterations = int(payload.get("iterations", 1))
+    if payload.get("apply", False):
+        version_compat.apply_modifier(obj, mod.name)
+    return {"object": obj.name, "angle": mod.angle, "steps": mod.steps}
+
+
+# ---------------------------------------------------------------------------
+# 31. 线框修改器（骨架 / 网格外壳效果）
+# ---------------------------------------------------------------------------
+def wireframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mod = H.add_modifier(obj, "WIREFRAME", "wireframe")
+    mod.thickness = float(payload.get("thickness", 0.02))
+    mod.offset = float(payload.get("offset", 0.0))
+    mod.use_replace = bool(payload.get("replace", True))
+    if payload.get("apply", False):
+        version_compat.apply_modifier(obj, mod.name)
+    return {"object": obj.name, "thickness": mod.thickness}
+
+
+# ---------------------------------------------------------------------------
+# 32. 置换修改器（地形起伏 / 角色表面起伏）
+# ---------------------------------------------------------------------------
+def displace(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mod = H.add_modifier(obj, "DISPLACE", "displace")
+    mod.strength = float(payload.get("strength", 0.2))
+    mod.mid_level = float(payload.get("mid_level", 0.5))
+    direction = payload.get("direction", "NORMAL")
+    if direction in ("NORMAL", "X", "Y", "Z"):
+        mod.direction = direction
+    if payload.get("apply", False):
+        version_compat.apply_modifier(obj, mod.name)
+    return {"object": obj.name, "strength": mod.strength}
+
+
+# ---------------------------------------------------------------------------
+# 33. 锐边拆分修改器
+# ---------------------------------------------------------------------------
+def edge_split(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mod = H.add_modifier(obj, "EDGE_SPLIT", "edge_split")
+    mod.split_angle = float(payload.get("split_angle", 30.0))
+    if payload.get("apply", False):
+        version_compat.apply_modifier(obj, mod.name)
+    return {"object": obj.name, "split_angle": mod.split_angle}
+
+
+# ---------------------------------------------------------------------------
+# 34. 收缩包裹（角色 / 道具贴合目标表面）
+# ---------------------------------------------------------------------------
+def shrinkwrap(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    target = H.require_object(payload["target"])
+    mod = H.add_modifier(obj, "SHRINKWRAP", "shrinkwrap")
+    mod.target = target
+    method = payload.get("wrap_method", "NEAREST_SURFACEPOINT")
+    if method in ("NEAREST_SURFACEPOINT", "PROJECT", "TARGET_PROJECT"):
+        mod.wrap_method = method
+    mod.offset = float(payload.get("offset", 0.0))
+    if payload.get("apply", False):
+        version_compat.apply_modifier(obj, mod.name)
+    return {"object": obj.name, "target": target.name, "method": mod.wrap_method}
+
+
+# ---------------------------------------------------------------------------
+# 35. 边折痕标记（细分时保留硬边）
+# ---------------------------------------------------------------------------
+def crease(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    if obj.type != "MESH":
+        raise ValueError("折痕标记仅支持网格对象")
+    value = float(payload.get("value", 1.0))
+    edge_indexes = payload.get("edges")
+    edges = obj.data.edges
+    if edge_indexes is None:
+        for edge in edges:
+            edge.crease = value
+    else:
+        for idx in edge_indexes:
+            if 0 <= int(idx) < len(edges):
+                edges[int(idx)].crease = value
+    return {"object": obj.name, "value": value,
+            "edges": len(edges) if edge_indexes is None else len(edge_indexes)}
+
+
+# ---------------------------------------------------------------------------
 # 注册
 # ---------------------------------------------------------------------------
 def register(dispatcher) -> None:
@@ -439,3 +577,12 @@ def register(dispatcher) -> None:
     dispatcher.register("mesh.uv_unwrap", uv_unwrap, ["object"])
     dispatcher.register("mesh.apply_all", apply_all, ["object"])
     dispatcher.register("mesh.transform", transform, ["object"])
+    dispatcher.register("mesh.duplicate", duplicate, ["object"])
+    dispatcher.register("mesh.join", join, ["object"])
+    dispatcher.register("mesh.separate", separate, ["object"])
+    dispatcher.register("mesh.screw", screw, ["object"])
+    dispatcher.register("mesh.wireframe", wireframe, ["object"])
+    dispatcher.register("mesh.displace", displace, ["object"])
+    dispatcher.register("mesh.edge_split", edge_split, ["object"])
+    dispatcher.register("mesh.shrinkwrap", shrinkwrap, ["object", "target"])
+    dispatcher.register("mesh.crease", crease, ["object"])

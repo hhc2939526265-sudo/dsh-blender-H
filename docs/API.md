@@ -86,7 +86,7 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | transfer.ack | 预留：分片确认回执，当前协议未使用 | - |
 | render.result_back | 预留：渲染结果主动回传事件，当前由 `transfer.end` 事件承载 | - |
 
-### 3.2 建模指令（26 种）
+### 3.2 建模指令（35 种）
 
 | cmd_type | 说明 | 必填参数 |
 |---|---|---|
@@ -116,6 +116,15 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | mesh.uv_unwrap | UV 自动展开 | object |
 | mesh.apply_all | 应用全部修改器 | object |
 | mesh.transform | 变换 | object, location/rotation/scale |
+| mesh.duplicate | 复制对象（可关联 / 独立数据） | object, linked, name |
+| mesh.join | 合并多对象到目标 | object, objects[] |
+| mesh.separate | 按松散块 / 材质 / 选择分离 | object, type |
+| mesh.screw | 螺旋修改器 | object, angle, steps, iterations |
+| mesh.wireframe | 线框修改器 | object, thickness, offset |
+| mesh.displace | 置换起伏 | object, strength, direction |
+| mesh.edge_split | 锐边拆分 | object, split_angle |
+| mesh.shrinkwrap | 收缩包裹到目标表面 | object, target, wrap_method |
+| mesh.crease | 边折痕标记 | object, edges[], value |
 
 ### 3.3 角色建模
 
@@ -126,7 +135,7 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | character.shape_keys | 写入面部形状键 | object, shape_keys[] |
 | character.uv_bake | 参考图 PBR 烘焙 | object, image_path |
 
-### 3.4 动画指令（8 种）
+### 3.4 动画指令（13 种）
 
 | cmd_type | 说明 | 必填参数 |
 |---|---|---|
@@ -138,8 +147,13 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | anim.mocap_apply | 动捕轨迹对齐 | object, motion |
 | anim.timing | 全局 / 局部变速 | object, speed |
 | anim.easing | 缓动曲线 | object, easing |
+| anim.clear | 清除对象动画数据 | object |
+| anim.ik | 骨骼 IK 约束 | object, bone, target, chain_count |
+| anim.copy_transform | 复制变换约束 | object, target, influence |
+| anim.action_list | 列出场景动作数据 | 可选 object |
+| anim.parent_set | 对象父子绑定 | object, parent, keep_transform |
 
-### 3.5 特效指令（5 种）
+### 3.5 特效指令（10 种）
 
 | cmd_type | 说明 |
 |---|---|
@@ -148,8 +162,13 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | effect.fluid | 流体域参数 |
 | effect.deform | 晶格 / 形状键形变关键帧 |
 | effect.camera_match | 摄像机动画（推拉摇移 / 环绕） |
+| effect.force_field | 力场（风 / 推力 / 涡旋 / 湍流等） | object, kind, field.strength |
+| effect.light | 灯光对象（点 / 平行 / 聚光 / 面光） | type, energy, color, location |
+| effect.world | 世界环境背景色 / 强度 | color, strength |
+| effect.hair | 毛发粒子（数量 / 长度 / 颜色） | object, hair.count/length |
+| effect.motion_blur | 合成运动模糊 | enabled, factor |
 
-### 3.6 材质指令（6 种）
+### 3.6 材质指令（9 种）
 
 | cmd_type | 说明 | 必填参数 |
 |---|---|---|
@@ -159,6 +178,9 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | material.preset_save | 保存材质预设 | name, object |
 | material.preset_load | 加载材质预设 | name, object |
 | material.duplicate | 复制材质并挂载目标 | object（可选 target/new_name） |
+| material.assign | 把已有材质分配给对象 | object, material_name, replace |
+| material.clear | 清空对象材质槽 | object |
+| material.list | 材质清单（对象挂载 + 场景全部材质） | 可选 objects[] |
 
 ### 3.7 渲染 / 场景 / 导出
 

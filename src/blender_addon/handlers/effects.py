@@ -182,9 +182,134 @@ def camera_match(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
             "distance": distance, "end_frame": end_frame}
 
 
+# ---------------------------------------------------------------------------
+# 6. 力场（风 / 推力 / 涡旋 / 湍流等场景氛围与角色受力）
+# ---------------------------------------------------------------------------
+_FIELD_TYPES = {
+    "WIND", "FLOW", "VID", "VORTEX", "MAGNET", "FORCE", "TEXTURE",
+    "TURBULENCE", "DRAG", "HARMONIC", "SMOKE_FLOW", "BOID",
+}
+
+
+def force_field(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    emitter = H.require_object(payload["object"])
+    kind = payload.get("kind", "FLOW")
+    if kind not in _FIELD_TYPES:
+        raise ValueError(f"不支持的力场类型: {kind}")
+    spec = payload.get("field", {})
+    field = bpy.data.fields.new(name=f"{emitter.name}_Field", type=kind)
+    field.strength = float(spec.get("strength", 1.0))
+    if hasattr(field, "flow"):
+        field.flow = float(spec.get("flow", 1.0))
+    field_obj = bpy.data.objects.new(field.name, field)
+    bpy.context.collection.objects.link(field_obj)
+    H.set_transform(field_obj, payload)
+    return {"emitter": emitter.name, "field": field.name, "kind": kind,
+            "strength": field.strength}
+
+
+# ---------------------------------------------------------------------------
+# 7. 灯光对象（角色 / 场景布光）
+# ---------------------------------------------------------------------------
+_LIGHT_TYPES = {"POINT", "SUN", "SPOT", "AREA"}
+
+
+def light(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    ltype = payload.get("type", "POINT")
+    if ltype not in _LIGHT_TYPES:
+        raise ValueError(f"不支持的灯光类型: {ltype}（POINT / SUN / SPOT / AREA）")
+    data = bpy.data.lights.new(name=payload.get("name", f"Light_{ltype}"), type=ltype)
+    data.energy = float(payload.get("energy", 100.0))
+    color = payload.get("color", [1.0, 1.0, 1.0, 1.0])
+    if len(color) >= 3:
+        data.color = tuple(color[:3])
+    if ltype == "SPOT":
+        data.spot_size = float(payload.get("spot_size", math.radians(45.0)))
+    obj = bpy.data.objects.new(data.name, data)
+    bpy.context.collection.objects.link(obj)
+    H.set_transform(obj, payload)
+    return {"light": obj.name, "type": ltype, "energy": data.energy}
+
+
+# ---------------------------------------------------------------------------
+# 8. 世界环境背景（场景氛围底色 / 环境光）
+# ---------------------------------------------------------------------------
+def world(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    scene = bpy.context.scene
+    world = scene.world or bpy.data.worlds.new("World")
+    scene.world = world
+    color = payload.get("color", [0.05, 0.05, 0.05, 1.0])
+    strength = float(payload.get("strength", 1.0))
+    applied_node = False
+    try:
+        world.use_nodes = True
+        bg = next((n for n in world.node_tree.nodes if n.type == "BACKGROUND"), None)
+        if bg is not None:
+            bg.inputs["Color"].default_value = color
+            bg.inputs["Strength"].default_value = strength
+            applied_node = True
+    except (RuntimeError, TypeError, AttributeError):
+        applied_node = False
+    if not applied_node:
+        world.color = tuple(color[:3])
+    return {"world": world.name, "color": color, "strength": strength,
+            "node_setup": applied_node}
+
+
+# ---------------------------------------------------------------------------
+# 9. 毛发粒子（角色头发 / 绒毛）
+# ---------------------------------------------------------------------------
+def hair(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    target = H.require_object(payload["object"])
+    spec = payload.get("hair", {})
+    count = int(spec.get("count", 500))
+    length = float(spec.get("length", 0.15))
+    mod = target.modifiers.new(name="effect_hair", type="PARTICLE_SYSTEM")
+    psys = mod.particle_system
+    settings = psys.settings
+    settings.type = "HAIR"
+    settings.count = count
+    settings.hair_length = length
+    color = spec.get("color", [0.12, 0.08, 0.05, 1.0])
+    ctx.bridge.push_event("effect.hair_color",
+                          {"emitter": target.name, "color": color})
+    return {"emitter": target.name, "count": count, "length": length}
+
+
+# ---------------------------------------------------------------------------
+# 10. 合成运动模糊（镜头 / 角色拖影）
+# ---------------------------------------------------------------------------
+def motion_blur(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    scene = bpy.context.scene
+    enabled = bool(payload.get("enabled", True))
+    factor = float(payload.get("factor", 0.5))
+    ok = False
+    try:
+        scene.use_nodes = True
+        comp = scene.node_tree
+        blur = next((n for n in comp.nodes if n.type == "MOTIONBLUR"), None)
+        if blur is None:
+            blur = comp.nodes.new("CompositorNodeMotionBlur")
+            comp.links.new(comp.nodes.get("Render Layers").outputs["Image"],
+                           blur.inputs["Image"])
+            comp.links.new(blur.outputs["Image"],
+                           comp.nodes.get("Composite").inputs["Image"])
+        blur.shutter = factor
+        ok = True
+    except (RuntimeError, TypeError, AttributeError):
+        ok = False
+    scene.render.use_motion_blur = enabled
+    return {"enabled": enabled, "factor": factor, "compositor": ok}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("effect.particle", particle, ["object"])
     dispatcher.register("effect.glow", glow, ["object"])
     dispatcher.register("effect.fluid", fluid, ["object"])
     dispatcher.register("effect.deform", deform, ["object"])
     dispatcher.register("effect.camera_match", camera_match)
+    dispatcher.register("effect.force_field", force_field, ["object"])
+    dispatcher.register("effect.light", light)
+    dispatcher.register("effect.world", world)
+    dispatcher.register("effect.hair", hair, ["object"])
+    dispatcher.register("effect.motion_blur", motion_blur)

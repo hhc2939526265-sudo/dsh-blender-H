@@ -20,7 +20,7 @@ import bpy
 bl_info = {
     "name": "DSH Blender Bridge",
     "author": "DSH-Blender Bridge Contributors",
-    "version": (1, 1, 2),
+    "version": (1, 1, 3),
     "blender": (4, 2, 0),
     "location": "3D View > Sidebar > DSH Bridge",
     "description": "DSH 与 Blender 双向实时桥接：多模态输入 → AI 解析 → 3D 生产 → 迭代 → 渲染交付",
@@ -28,7 +28,7 @@ bl_info = {
     "support": "COMMUNITY",
 }
 
-ADDON_VERSION = "1.1.2"
+ADDON_VERSION = "1.1.3"
 
 
 def register() -> None:

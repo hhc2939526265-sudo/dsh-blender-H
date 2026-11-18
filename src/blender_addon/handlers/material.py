@@ -166,6 +166,43 @@ def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"source": src.name, "material": new_mat.name, "target": target.name}
 
 
+# ---------------------------------------------------------------------------
+# 7. 把已有材质分配给对象
+# ---------------------------------------------------------------------------
+def assign(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mat = bpy.data.materials.get(payload["material_name"])
+    if mat is None:
+        raise KeyError(f"材质不存在: {payload['material_name']}")
+    if payload.get("replace", True):
+        obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    return {"object": obj.name, "material": mat.name,
+            "replace": payload.get("replace", True)}
+
+
+# ---------------------------------------------------------------------------
+# 8. 清空对象材质槽
+# ---------------------------------------------------------------------------
+def clear(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    obj.data.materials.clear()
+    return {"object": obj.name, "cleared": True}
+
+
+# ---------------------------------------------------------------------------
+# 9. 材质清单（对象挂载情况 + 场景全部材质）
+# ---------------------------------------------------------------------------
+def list_materials(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    objects = H.list_objects(payload.get("objects"))
+    per_object: Dict[str, List[str]] = {}
+    for obj in objects:
+        per_object[obj.name] = [m.name for m in obj.data.materials] \
+            if hasattr(obj.data, "materials") else []
+    all_mats = [m.name for m in bpy.data.materials]
+    return {"objects": per_object, "materials": all_mats, "count": len(all_mats)}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("material.pbr_generate", pbr_generate, ["object"])
     dispatcher.register("material.batch_replace", batch_replace,
@@ -174,3 +211,6 @@ def register(dispatcher) -> None:
     dispatcher.register("material.preset_save", preset_save, ["name", "object"])
     dispatcher.register("material.preset_load", preset_load, ["name", "object"])
     dispatcher.register("material.duplicate", duplicate, ["object"])
+    dispatcher.register("material.assign", assign, ["object", "material_name"])
+    dispatcher.register("material.clear", clear, ["object"])
+    dispatcher.register("material.list", list_materials)

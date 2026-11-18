@@ -11,7 +11,8 @@ bpy = types.ModuleType("bpy")
 bpy.app = types.SimpleNamespace(version=(4, 2, 0))
 bpy.context = types.SimpleNamespace(
     view_layer=types.SimpleNamespace(objects=types.SimpleNamespace(active=None)))
-bpy.data = types.SimpleNamespace(objects={})
+bpy.data = types.SimpleNamespace(objects={}, materials={}, actions=[],
+                                  lights=[], fields=[])
 
 
 class _StubOps:
@@ -29,19 +30,30 @@ sys.modules["bpy"] = bpy
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from blender_addon.handlers import _helpers, modeling, animation, effects, addons  # noqa: E402
-from blender_addon.core import transfer  # noqa: E402
+from blender_addon.handlers import (_helpers, modeling, animation, effects,
+                                     material, addons)  # noqa: E402
+from blender_addon.core import transfer, dispatcher  # noqa: E402
 from blender_addon.utils import paths  # noqa: E402
 
 
 class _Obj:
     """模拟 Blender 对象的最小桩。"""
 
-    def __init__(self, name="Cube"):
+    def __init__(self, name="Obj", obj_type="MESH"):
         self.name = name
+        self.type = obj_type
         self.location = [0.0, 0.0, 0.0]
         self.rotation_euler = [0.0, 0.0, 0.0]
         self.scale = [1.0, 1.0, 1.0]
+        self.data = types.SimpleNamespace(materials=[])
+
+
+class _MeshObj(_Obj):
+    """带网格边集合的桩对象。"""
+
+    def __init__(self, name="Cube"):
+        super().__init__(name, "MESH")
+        self.data.edges = []
 
 
 class TestActiveRef(unittest.TestCase):
@@ -190,6 +202,76 @@ class TestAddonOperatorPolicy(unittest.TestCase):
                     "addon_operator_allowlist": [], "addon_operator_denylist": []})
         with self.assertRaises(PermissionError):
             addons.invoke_operator({"operator": "mesh.primitive_cube_add", "params": {}}, ctx)
+
+
+class TestNewModelingGuards(unittest.TestCase):
+
+    def setUp(self):
+        self.obj = _MeshObj()
+        bpy.context.view_layer.objects.active = self.obj
+
+    def test_separate_bad_type_rejected(self):
+        with self.assertRaises(ValueError):
+            modeling.separate({"object": "active", "type": "SPLIT"}, None)
+
+    def test_crease_non_mesh_rejected(self):
+        empty = _Obj("Empty", "EMPTY")
+        bpy.context.view_layer.objects.active = empty
+        with self.assertRaises(ValueError):
+            modeling.crease({"object": "active"}, None)
+
+
+class TestNewEffectGuards(unittest.TestCase):
+
+    def setUp(self):
+        self.obj = _Obj()
+        bpy.context.view_layer.objects.active = self.obj
+
+    def test_light_bad_type_rejected(self):
+        with self.assertRaises(ValueError):
+            effects.light({"type": "LASER"}, None)
+
+    def test_force_field_bad_kind_rejected(self):
+        with self.assertRaises(ValueError):
+            effects.force_field({"object": "active", "kind": "ANTIGRAVITY"}, None)
+
+
+class TestMaterialGuards(unittest.TestCase):
+
+    def setUp(self):
+        self.obj = _Obj()
+        bpy.context.view_layer.objects.active = self.obj
+
+    def test_assign_missing_material_rejected(self):
+        with self.assertRaises(KeyError):
+            material.assign({"object": "active", "material_name": "NoSuch"}, None)
+
+
+class TestRegistry(unittest.TestCase):
+
+    def test_new_commands_registered_and_counts(self):
+        d = dispatcher.Dispatcher(None, None, {})
+        modeling.register(d)
+        animation.register(d)
+        material.register(d)
+        effects.register(d)
+        names = set(d.available_commands())
+        expected = [
+            "mesh.duplicate", "mesh.join", "mesh.separate", "mesh.screw",
+            "mesh.wireframe", "mesh.displace", "mesh.edge_split",
+            "mesh.shrinkwrap", "mesh.crease",
+            "anim.clear", "anim.ik", "anim.copy_transform",
+            "anim.action_list", "anim.parent_set",
+            "material.assign", "material.clear", "material.list",
+            "effect.force_field", "effect.light", "effect.world",
+            "effect.hair", "effect.motion_blur",
+        ]
+        for cmd in expected:
+            self.assertIn(cmd, names)
+        self.assertEqual(len([n for n in names if n.startswith("mesh.")]), 35)
+        self.assertEqual(len([n for n in names if n.startswith("anim.")]), 13)
+        self.assertEqual(len([n for n in names if n.startswith("material.")]), 9)
+        self.assertEqual(len([n for n in names if n.startswith("effect.")]), 10)
 
 
 if __name__ == "__main__":

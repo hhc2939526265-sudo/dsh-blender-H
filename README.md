@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Blender](https://img.shields.io/badge/Blender-4.2%20LTS%20~%205.3-green.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.1.2-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.3-orange.svg)](CHANGELOG.md)
 
 ---
 
@@ -16,7 +16,7 @@
 - **多模态分片传输**：图片 / 视频断点续传 + MD5 校验，大文件稳定无损坏；成品图 / 视频反向回传预览。
 - **图片驱动建模**：单 / 多图解析，三档面数精度，50+ 面部形状键、服装 / 发型分层、UV 展开、基础 PBR 烘焙、标准人形骨骼自动绑定。
 - **视频驱动动画与特效**：21+ 关节轨迹复刻、帧率匹配降噪；粒子 / 辉光 / 流体 / 形变 / 镜头运动映射为可编辑节点。
-- **自然语言建模**：中文提示词解析为 26 种建模指令、8 种动画指令、6 种材质指令。
+- **自然语言建模**：中文提示词解析为 35 种建模指令、13 种动画指令、9 种材质指令。
 - **第三方插件生态**：识别已启用 Blender Addon，按能力归类、发现算子，自然语言匹配并安全调用第三方算子。
 - **材质渲染闭环**：PBR 节点树生成、批量材质管理、预设存取、Eevee / Cycles 切换、成品自动回传。
 - **反向迭代**：模型 / 动画 / 材质 / 场景一键回传 DSH，支持多轮 AI 优化。
@@ -66,9 +66,9 @@ dsh-blender-H/
 git clone https://github.com/hhc2939526265-sudo/dsh-blender-H.git
 ```
 
-1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.2.zip` →
+1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.3.zip` →
    Blender 偏好设置 → 插件 → 从磁盘安装 → 勾选启用 → 侧边栏 `DSH Bridge` 启动服务。
-2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.2.zip` →
+2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.3.zip` →
    DSH 插件管理本地安装 → 启用面板。
 3. **连接使用**：两端地址端口保持一致（默认 `127.0.0.1:8765`）→ 点击连接 →
    上传图片 / 视频或输入提示词开始生产。
@@ -92,7 +92,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package_all.ps1
 
 ## 指令规模
 
-- 建模指令 26 种｜动画指令 8 种｜材质指令 6 种｜特效指令 5 种｜插件生态指令 4 种
+- 建模指令 35 种｜动画指令 13 种｜材质指令 9 种｜特效指令 10 种｜插件生态指令 4 种
 - 角色 / 渲染 / 场景 / 导出 / 流水线 / 自然语言指令若干，完整清单见 [docs/API.md](docs/API.md)
 
 ## 已知限制

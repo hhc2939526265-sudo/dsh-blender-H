@@ -31,6 +31,25 @@
       "note": "可选：覆盖默认镜头轨迹为推轨"
     },
     {
+      "cmd_type": "effect.light",
+      "payload": {
+        "type": "SPOT", "energy": 200.0,
+        "color": [1.0, 0.85, 0.7, 1.0],
+        "location": [2.0, -3.0, 3.0]
+      },
+      "note": "可选：角色前方暖色主光"
+    },
+    {
+      "cmd_type": "effect.force_field",
+      "payload": { "object": "Character_Body", "kind": "WIND", "field": { "strength": 1.2 } },
+      "note": "可选：风场吹动头发 / 布料"
+    },
+    {
+      "cmd_type": "effect.motion_blur",
+      "payload": { "enabled": true, "factor": 0.5 },
+      "note": "可选：合成运动模糊增强拖影"
+    },
+    {
       "cmd_type": "render.switch_engine",
       "payload": { "engine": "EEVEE" }
     },

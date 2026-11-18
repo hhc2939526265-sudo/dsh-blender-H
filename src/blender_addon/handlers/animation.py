@@ -248,6 +248,70 @@ def easing(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"object": obj.name, "easing": payload.get("easing")}
 
 
+# ---------------------------------------------------------------------------
+# 9. 清除对象动画数据
+# ---------------------------------------------------------------------------
+def clear(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    obj.animation_data_clear()
+    return {"object": obj.name, "cleared": True}
+
+
+# ---------------------------------------------------------------------------
+# 10. 骨骼 IK 约束（角色肢体反向运动学）
+# ---------------------------------------------------------------------------
+def ik(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    armature = H.require_object(payload["object"])
+    bone_name = payload["bone"]
+    target = H.require_object(payload["target"])
+    pb = armature.pose.bones.get(bone_name)
+    if pb is None:
+        raise KeyError(f"骨骼不存在: {bone_name}")
+    con = pb.constraints.new(type="IK")
+    con.target = target
+    con.chain_count = int(payload.get("chain_count", 2))
+    con.ik_type = "COPY_POSE" if payload.get("copy_pose", False) else "LEGACY"
+    return {"armature": armature.name, "bone": bone_name,
+            "target": target.name, "chain_count": con.chain_count}
+
+
+# ---------------------------------------------------------------------------
+# 11. 复制变换约束（跟随目标位置 / 旋转 / 缩放）
+# ---------------------------------------------------------------------------
+def copy_transform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    target = H.require_object(payload["target"])
+    con = obj.constraints.new(type="COPY_TRANSFORMS")
+    con.target = target
+    con.influence = float(payload.get("influence", 1.0))
+    return {"object": obj.name, "target": target.name,
+            "influence": con.influence}
+
+
+# ---------------------------------------------------------------------------
+# 12. 列出场景动作数据
+# ---------------------------------------------------------------------------
+def action_list(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    actions = [a.name for a in bpy.data.actions]
+    obj = H.get_object(payload.get("object"))
+    current = obj.animation_data.action.name \
+        if obj is not None and obj.animation_data and obj.animation_data.action else None
+    return {"actions": actions, "active": current, "count": len(actions)}
+
+
+# ---------------------------------------------------------------------------
+# 13. 对象父子绑定（角色道具 / 部件挂载）
+# ---------------------------------------------------------------------------
+def parent_set(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    parent = H.require_object(payload["parent"]) if payload.get("parent") else None
+    keep = bool(payload.get("keep_transform", True))
+    if keep:
+        obj.matrix_parent_inverse = obj.matrix_world.inverted()
+    obj.parent = parent
+    return {"object": obj.name, "parent": parent.name if parent else None}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("anim.keyframe", keyframe, ["object", "frames"])
     dispatcher.register("anim.rig_auto", rig_auto, ["object"])
@@ -258,3 +322,8 @@ def register(dispatcher) -> None:
     dispatcher.register("anim.mocap_apply", mocap_apply, ["object", "motion"])
     dispatcher.register("anim.timing", timing, ["object"])
     dispatcher.register("anim.easing", easing, ["object"])
+    dispatcher.register("anim.clear", clear, ["object"])
+    dispatcher.register("anim.ik", ik, ["object", "bone", "target"])
+    dispatcher.register("anim.copy_transform", copy_transform, ["object", "target"])
+    dispatcher.register("anim.action_list", action_list)
+    dispatcher.register("anim.parent_set", parent_set, ["object"])

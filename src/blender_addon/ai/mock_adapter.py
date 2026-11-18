@@ -209,6 +209,14 @@ class MockAIProvider(BaseAIProvider):
             add("mesh.origin_set", {"object": "active"})
         if "平滑" in text:
             add("mesh.smooth", {"object": "active"})
+        if "复制" in text or "拷贝" in text:
+            add("mesh.duplicate", {"object": "active", "linked": False})
+        if "合并" in text:
+            add("mesh.join", {"object": "active", "objects": []})
+        if "线框" in text:
+            add("mesh.wireframe", {"object": "active", "thickness": 0.02})
+        if "起伏" in text or "置换" in text:
+            add("mesh.displace", {"object": "active", "strength": 0.2})
 
         # 动画意图
         if "旋转" in text:
@@ -231,6 +239,17 @@ class MockAIProvider(BaseAIProvider):
             add("material.pbr_generate", {"object": "active",
                                          "metallic": 0.0, "roughness": 0.1,
                                          "alpha": 0.35})
+
+        # 特效意图
+        if "毛发" in text or "头发" in text:
+            add("effect.hair", {"object": "active",
+                                 "hair": {"count": 500, "length": 0.15}})
+        if "灯光" in text or "补光" in text or "聚光" in text:
+            add("effect.light", {"type": "POINT", "energy": 100.0,
+                                 "color": [1.0, 0.9, 0.8, 1.0]})
+        if "风场" in text or "风力" in text:
+            add("effect.force_field", {"object": "active", "kind": "WIND",
+                                       "field": {"strength": 1.0}})
 
         return {"prompt": prompt, "commands": commands,
                 "matched_rules": len(commands)}

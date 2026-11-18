@@ -2,6 +2,21 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.3] - 2026-11-18
+
+### Added
+- 建模新增 9 条（人物形体 / 场景道具）：`mesh.duplicate`、`mesh.join`、`mesh.separate`、`mesh.screw`、`mesh.wireframe`、`mesh.displace`、`mesh.edge_split`、`mesh.shrinkwrap`、`mesh.crease`。
+- 动画新增 5 条（角色绑定 / 装配）：`anim.clear`、`anim.ik`、`anim.copy_transform`、`anim.action_list`、`anim.parent_set`。
+- 材质新增 3 条：`material.assign`、`material.clear`、`material.list`。
+- 特效新增 5 条（场景氛围 / 角色特效）：`effect.force_field`、`effect.light`、`effect.world`、`effect.hair`、`effect.motion_blur`。
+- Mock 自然语言规则补充复制 / 合并 / 线框 / 置换 / 毛发 / 灯光 / 风场关键词映射；案例 2 演示灯光、风场与运动模糊。
+
+### Changed
+- 指令规模更新为建模 35 / 动画 13 / 材质 9 / 特效 10；API 文档与示例提示词同步更新。
+
+### 测试
+- 新增注册清单与参数守卫用例，共 52 个单元测试全部通过。
+
 ## [1.1.2] - 2026-11-18
 
 ### Fixed
@@ -58,7 +73,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.3
 [1.1.2]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.2
 [1.1.1]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.1
 [1.1.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.0

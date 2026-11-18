@@ -10,9 +10,10 @@ import unittest
 bpy = types.ModuleType("bpy")
 bpy.app = types.SimpleNamespace(version=(4, 2, 0))
 bpy.context = types.SimpleNamespace(
-    view_layer=types.SimpleNamespace(objects=types.SimpleNamespace(active=None)))
+    view_layer=types.SimpleNamespace(objects=types.SimpleNamespace(active=None)),
+    preferences=types.SimpleNamespace(addons=[]))
 bpy.data = types.SimpleNamespace(objects={}, materials={}, actions=[],
-                                  lights=[], fields=[])
+                                  lights=[], fields=[], node_groups={})
 
 
 class _StubOps:
@@ -216,6 +217,48 @@ class TestAddonOperatorPolicy(unittest.TestCase):
             addons.invoke_operator({"operator": "mesh.primitive_cube_add", "params": {}}, ctx)
 
 
+class TestAddonEcosystemGuards(unittest.TestCase):
+
+    def _ctx(self, **overrides):
+        cfg = {"allow_addon_invoke": True, "allow_addon_enable": True,
+               "allow_addon_disable": True, "addon_operator_allowlist": [],
+               "addon_operator_denylist": []}
+        cfg.update(overrides)
+        return _Ctx(cfg)
+
+    def test_enable_invalid_module_rejected(self):
+        with self.assertRaises(ValueError):
+            addons.enable_addon({"module": "foo/bar"}, self._ctx())
+
+    def test_enable_disabled_config_rejected(self):
+        with self.assertRaises(PermissionError):
+            addons.enable_addon({"module": "rigify"}, self._ctx(allow_addon_enable=False))
+
+    def test_disable_disabled_config_rejected(self):
+        with self.assertRaises(PermissionError):
+            addons.disable_addon({"module": "rigify"}, self._ctx(allow_addon_disable=False))
+
+    def test_search_empty_keyword_rejected(self):
+        with self.assertRaises(ValueError):
+            addons.operator_search({"keyword": "  "}, self._ctx())
+
+    def test_batch_empty_objects_rejected(self):
+        with self.assertRaises(ValueError):
+            addons.operator_batch({"operator": "mesh.primitive_cube_add",
+                                   "objects": []}, self._ctx())
+
+    def test_nodegroup_missing_rejected(self):
+        bpy.context.view_layer.objects.active = _Obj()
+        with self.assertRaises(KeyError):
+            addons.nodegroup_apply({"object": "active",
+                                    "node_group": "MissingGroup"}, self._ctx())
+
+    def test_status_returns_policy(self):
+        res = addons.status_addons({}, self._ctx())
+        self.assertEqual(res["enabled_count"], 0)
+        self.assertTrue(res["policy"]["allow_invoke"])
+
+
 class TestNewModelingGuards(unittest.TestCase):
 
     def setUp(self):
@@ -267,6 +310,7 @@ class TestRegistry(unittest.TestCase):
         animation.register(d)
         material.register(d)
         effects.register(d)
+        addons.register(d)
         names = set(d.available_commands())
         expected = [
             "mesh.duplicate", "mesh.join", "mesh.separate", "mesh.screw",
@@ -283,6 +327,9 @@ class TestRegistry(unittest.TestCase):
             "effect.trail", "effect.shockwave", "effect.shield",
             "effect.lightning", "effect.aura", "effect.debris",
             "effect.spark", "effect.camera_shake",
+            "addon.enable", "addon.disable", "addon.status",
+            "addon.operator_search", "addon.operator_batch",
+            "addon.nodegroup_apply",
         ]
         for cmd in expected:
             self.assertIn(cmd, names)
@@ -290,6 +337,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len([n for n in names if n.startswith("anim.")]), 17)
         self.assertEqual(len([n for n in names if n.startswith("material.")]), 10)
         self.assertEqual(len([n for n in names if n.startswith("effect.")]), 18)
+        self.assertEqual(len([n for n in names if n.startswith("addon.")]), 10)
 
 
 class TestFightAnimationGuards(unittest.TestCase):

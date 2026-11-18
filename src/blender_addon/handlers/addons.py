@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -62,6 +63,9 @@ _ALLOWED_CONTAINER = (list, tuple)
 
 # 本桥接插件自身的标识，枚举时排除，避免把自己列为第三方插件
 _SELF_MARKERS = ("dsh", "bridge")
+
+# 插件模块名合法字符：字母 / 数字 / 下划线 / 点号（子包），禁止路径分隔符与空格
+_MODULE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$")
 
 
 # ===========================================================================
@@ -166,6 +170,42 @@ def _sanitize_params(params: Dict[str, Any]) -> Dict[str, Any]:
         else:
             raise ValueError(f"参数 {key} 类型不允许: {type(value).__name__}")
     return cleaned
+
+
+def _check_operator_policy(idname: str, ctx) -> None:
+    """算子安全策略：调用前统一过总开关、黑名单与白名单。"""
+    if not bool(ctx.config.get("allow_addon_invoke", True)):
+        raise PermissionError("第三方插件算子调用已在配置中关闭（allow_addon_invoke=False）")
+    lower_id = idname.lower()
+    denylist = [str(item).lower() for item in ctx.config.get("addon_operator_denylist", [])]
+    if any(bad and bad in lower_id for bad in denylist):
+        raise PermissionError(f"算子命中黑名单，禁止调用: {idname}")
+    allowlist = [str(item).lower() for item in ctx.config.get("addon_operator_allowlist", [])]
+    if allowlist and not any(lower_id.startswith(prefix) for prefix in allowlist):
+        raise PermissionError(f"算子不在白名单内: {idname}")
+
+
+def _validate_module_name(module: str) -> str:
+    """校验插件模块名格式，拒绝路径穿越 / 非法字符。"""
+    module = (module or "").strip()
+    if not module:
+        raise ValueError("插件模块名不能为空")
+    if not _MODULE_NAME_RE.match(module):
+        raise ValueError(f"插件模块名非法: {module}（仅允许字母 / 数字 / 下划线 / 点号）")
+    return module
+
+
+def _require_object(name: str):
+    """按名称取对象；``active`` 解析为当前活动对象，不存在抛 KeyError。"""
+    if name is None or str(name).strip().lower() == "active":
+        obj = bpy.context.view_layer.objects.active
+        if obj is None:
+            raise KeyError("当前没有活动对象，请先在场景中选中目标对象")
+        return obj
+    obj = bpy.data.objects.get(name)
+    if obj is None:
+        raise KeyError(f"对象不存在: {name}")
+    return obj
 
 
 # ===========================================================================
@@ -332,24 +372,14 @@ def invoke_operator(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         params    算子关键字参数（仅 JSON 原始类型）
         mode      execute（默认）/ invoke（INVOKE_DEFAULT，弹出交互面板）
     """
-    if not bool(ctx.config.get("allow_addon_invoke", True)):
-        raise PermissionError("第三方插件算子调用已在配置中关闭（allow_addon_invoke=False）")
-
     idname = payload["operator"]
     params = _sanitize_params(payload.get("params", {}))
     mode = payload.get("mode", "execute")
     if mode not in ("execute", "invoke"):
         raise ValueError(f"调用模式非法: {mode}（execute / invoke）")
 
-    # 算子安全策略：先过黑名单（危险工程 / 脚本 / 控制台算子一律拒绝），
-    # 再按白名单前缀放行；白名单为空表示不限前缀。
-    lower_id = idname.lower()
-    denylist = [str(item).lower() for item in ctx.config.get("addon_operator_denylist", [])]
-    if any(bad and bad in lower_id for bad in denylist):
-        raise PermissionError(f"算子命中黑名单，禁止调用: {idname}")
-    allowlist = [str(item).lower() for item in ctx.config.get("addon_operator_allowlist", [])]
-    if allowlist and not any(lower_id.startswith(prefix) for prefix in allowlist):
-        raise PermissionError(f"算子不在白名单内: {idname}")
+    # 算子安全策略：总开关 → 黑名单 → 白名单前缀
+    _check_operator_policy(idname, ctx)
 
     op = _resolve_operator(idname)
     ctx.log("info", f"调用第三方插件算子: {idname}（{mode}）")
@@ -385,8 +415,127 @@ def match_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"intent": intent, "matches": scored[:top_n], "count": len(scored)}
 
 
+# ---------------------------------------------------------------------------
+# 运行时启停 / 状态自检 / 全局检索 / 批量套用 / 几何节点组挂载
+# ---------------------------------------------------------------------------
+def enable_addon(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """运行时启用指定第三方插件（无需重启 Blender）。"""
+    if not bool(ctx.config.get("allow_addon_enable", True)):
+        raise PermissionError("第三方插件启用已在配置中关闭（allow_addon_enable=False）")
+    module = _validate_module_name(payload["module"])
+    if _is_self(module, {}):
+        raise PermissionError("禁止启停桥接插件自身")
+    bpy.ops.preferences.addon_enable(module=module)
+    ctx.log("info", f"已启用第三方插件: {module}")
+    return {"module": module, "enabled": True}
+
+
+def disable_addon(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """运行时禁用指定第三方插件。"""
+    if not bool(ctx.config.get("allow_addon_disable", True)):
+        raise PermissionError("第三方插件禁用已在配置中关闭（allow_addon_disable=False）")
+    module = _validate_module_name(payload["module"])
+    if _is_self(module, {}):
+        raise PermissionError("禁止启停桥接插件自身")
+    bpy.ops.preferences.addon_disable(module=module)
+    ctx.log("info", f"已禁用第三方插件: {module}")
+    return {"module": module, "enabled": False}
+
+
+def status_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """插件生态自检：已启用清单、版本与调用策略开关。"""
+    prefs = getattr(bpy.context.preferences, "addons", {})
+    enabled = sorted(getattr(item, "module", "") for item in prefs)
+    return {
+        "blender_version": getattr(bpy.app, "version_string", ""),
+        "enabled_count": len(enabled),
+        "enabled": enabled,
+        "policy": {
+            "allow_invoke": bool(ctx.config.get("allow_addon_invoke", True)),
+            "allow_enable": bool(ctx.config.get("allow_addon_enable", True)),
+            "allow_disable": bool(ctx.config.get("allow_addon_disable", True)),
+            "allowlist": list(ctx.config.get("addon_operator_allowlist", [])),
+            "denylist": list(ctx.config.get("addon_operator_denylist", [])),
+        },
+    }
+
+
+def operator_search(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """跨全部已注册算子按关键词检索（ID / 标签），返回归属前缀与算子定义。"""
+    keyword = str(payload.get("keyword", "")).strip().lower()
+    if not keyword:
+        raise ValueError("检索关键词 keyword 不能为空")
+    top_n = int(payload.get("top_n", 30))
+    groups = _operator_classes_by_prefix()
+    results: List[Dict[str, Any]] = []
+    for prefix, ops in groups.items():
+        for op in ops:
+            if keyword in op["idname"].lower() or keyword in op["label"].lower():
+                results.append({"prefix": prefix, **op})
+    results.sort(key=lambda item: item["idname"])
+    return {"keyword": keyword, "count": len(results),
+            "operators": results[:top_n]}
+
+
+def operator_batch(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """对一批对象依次套用同一算子，逐个隔离异常并回执成功 / 失败清单。"""
+    idname = payload["operator"]
+    object_refs = payload.get("objects") or []
+    if not object_refs:
+        raise ValueError("objects 对象列表不能为空")
+    params = _sanitize_params(payload.get("params", {}))
+    per_object = payload.get("per_object", {}) or {}
+
+    _check_operator_policy(idname, ctx)
+    op = _resolve_operator(idname)
+
+    results: List[Dict[str, Any]] = []
+    succeeded = 0
+    for ref in object_refs:
+        obj = _require_object(ref)
+        own_params = {**params, **(per_object.get(obj.name) or {})}
+        try:
+            for other in bpy.context.selected_objects:
+                other.select_set(False)
+            obj.select_set(True)
+            bpy.context.view_layer.objects.active = obj
+            op(**own_params)
+            results.append({"object": obj.name, "status": "SUCCESS"})
+            succeeded += 1
+        except Exception as exc:  # 单对象失败不中断整批，异常收敛进回执
+            results.append({"object": obj.name, "status": "FAILED", "error": str(exc)})
+    return {"operator": idname, "total": len(object_refs),
+            "succeeded": succeeded, "results": results}
+
+
+def nodegroup_apply(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """把已存在的几何节点组挂到对象上（来自资产库 / 已启用插件），可覆写输入。"""
+    obj = _require_object(payload.get("object"))
+    group_name = payload["node_group"]
+    node_group = bpy.data.node_groups.get(group_name)
+    if node_group is None:
+        raise KeyError(f"几何节点组不存在: {group_name}（请先由插件 / 资产库导入）")
+
+    mod = obj.modifiers.new(name=f"{group_name}_GN", type="NODES")
+    mod.node_group = node_group
+    inputs = payload.get("inputs", {}) or {}
+    applied_inputs: List[str] = []
+    for socket_name, value in inputs.items():
+        if socket_name in mod.inputs:
+            mod.inputs[socket_name].default_value = value
+            applied_inputs.append(socket_name)
+    return {"object": obj.name, "node_group": group_name,
+            "modifier": mod.name, "inputs": applied_inputs}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("addon.list", list_addons)
     dispatcher.register("addon.detail", detail_addon, ["module"])
     dispatcher.register("addon.invoke", invoke_operator, ["operator"])
     dispatcher.register("addon.match", match_addons, ["intent"])
+    dispatcher.register("addon.enable", enable_addon, ["module"])
+    dispatcher.register("addon.disable", disable_addon, ["module"])
+    dispatcher.register("addon.status", status_addons)
+    dispatcher.register("addon.operator_search", operator_search, ["keyword"])
+    dispatcher.register("addon.operator_batch", operator_batch, ["operator", "objects"])
+    dispatcher.register("addon.nodegroup_apply", nodegroup_apply, ["node_group"])

@@ -2,6 +2,18 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.5] - 2026-11-18
+
+### Added
+- 插件生态新增 6 条指令（4 → 10）：`addon.enable` / `addon.disable` 运行时启停、`addon.status` 生态自检与策略回执、`addon.operator_search` 全局算子检索、`addon.operator_batch` 批量算子套用（单对象失败隔离）、`addon.nodegroup_apply` 几何节点组挂载与输入覆写。
+- 新增配置开关 `allow_addon_enable` / `allow_addon_disable`；模块名格式校验，禁止桥接自身被启停；算子安全策略抽取为统一校验函数，调用与批量套用共用。
+
+### Changed
+- API 文档、使用说明与安装配置表同步补充新指令参数、示例与开关说明；示例提示词增至 38 条。
+
+### 测试
+- 新增启停 / 检索 / 批量 / 节点组守卫与注册清单用例，共 65 个单元测试全部通过。
+
 ## [1.1.4] - 2026-11-18
 
 ### Added
@@ -87,7 +99,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.4...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.5...HEAD
+[1.1.5]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.5
 [1.1.4]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.4
 [1.1.3]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.3
 [1.1.2]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.2

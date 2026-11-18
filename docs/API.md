@@ -225,6 +225,12 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | addon.detail | 查询单个插件的完整元信息与算子参数定义 | `module` |
 | addon.invoke | 通用算子调用入口 | `operator`（`namespace.operator`） |
 | addon.match | 按自然语言意图匹配最贴合的插件 | `intent` |
+| addon.enable | 运行时启用指定第三方插件（无需重启 Blender） | `module` |
+| addon.disable | 运行时禁用指定第三方插件 | `module` |
+| addon.status | 插件生态自检：已启用清单、版本与调用策略开关 | - |
+| addon.operator_search | 跨全部已注册算子按关键词检索（ID / 标签） | `keyword`, 可选 `top_n` |
+| addon.operator_batch | 对一批对象依次套用同一算子，逐个隔离异常回执 | `operator`, `objects`, 可选 `params` / `per_object` |
+| addon.nodegroup_apply | 把已有几何节点组挂到对象上，可覆写输入 | `node_group`, 可选 `object` / `inputs` |
 
 **addon.list 回执 result**
 
@@ -259,6 +265,37 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 - `params` 仅允许 JSON 原始类型（字符串 / 整数 / 浮点 / 布尔 / 原始类型数组），嵌套对象会被拒绝；
 - 能力分类取值：`modeling / rigging / animation / effects / material / render / asset / io / other`；
 - 调用开关：配置 `allow_addon_invoke=false` 时禁止调用第三方算子；单插件算子暴露上限 `addon_max_operators_per_addon`。
+
+**addon.operator_batch payload**
+
+```json
+{
+  "operator": "object.shade_smooth",
+  "objects": ["Cube", "Sphere", "active"],
+  "params": {},
+  "per_object": { "Cube": { "use_auto_smooth": true } }
+}
+```
+
+- 批量套用同一算子到多个对象；单对象失败不中断整批，回执逐条给出 `SUCCESS / FAILED` 与错误信息；
+- `per_object` 可按对象名覆盖该对象的算子参数；算子安全策略（总开关 / 黑名单 / 白名单）与 `addon.invoke` 一致。
+
+**addon.nodegroup_apply payload**
+
+```json
+{
+  "object": "active",
+  "node_group": "Procedural_Rock",
+  "inputs": { "Density": 3.0, "Seed": 7 }
+}
+```
+
+- 几何节点组需已存在于 `bpy.data.node_groups`（由已启用插件或资产库导入）；`inputs` 按节点组输入套接字名称覆写默认值。
+
+**启停与检索**
+
+- `addon.enable` / `addon.disable`：模块名仅允许字母 / 数字 / 下划线 / 点号；桥接自身不可被启停；分别受配置 `allow_addon_enable` / `allow_addon_disable` 控制。
+- `addon.operator_search`：返回算子 `idname`、`label`、归属 `prefix`；`addon.status` 回执含 Blender 版本、已启用模块与当前策略开关。
 
 ## 四、多模态数据格式
 

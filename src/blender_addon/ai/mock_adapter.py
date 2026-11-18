@@ -250,6 +250,26 @@ class MockAIProvider(BaseAIProvider):
         if "风场" in text or "风力" in text:
             add("effect.force_field", {"object": "active", "kind": "WIND",
                                        "field": {"strength": 1.0}})
+        if "剑气" in text or "拖尾" in text or "残影" in text:
+            add("effect.trail", {"object": "active",
+                                 "trail": {"length": 0.6, "width": 0.02}})
+        if "护盾" in text or "结界" in text:
+            add("effect.shield", {"object": "active",
+                                  "shield": {"radius": 0.8, "alpha": 0.25}})
+        if "雷" in text or "闪电" in text:
+            add("effect.lightning", {"start": [0.0, -1.0, 2.0],
+                                     "end": [0.0, 1.0, 1.2], "segments": 8})
+        if "灵气" in text or "光环" in text:
+            add("effect.aura", {"object": "active", "aura": {"radius": 0.6}})
+        if "冲击波" in text or "气浪" in text:
+            add("effect.shockwave", {"object": "active",
+                                     "shockwave": {"timing": [12, 24], "max_radius": 2.0}})
+        if "火花" in text:
+            add("effect.spark", {"object": "active", "spark": {"count": 120}})
+        if "碎片" in text or "碎石" in text:
+            add("effect.debris", {"object": "active", "debris": {"count": 12}})
+        if "震动" in text or "震屏" in text:
+            add("effect.camera_shake", {"amplitude": 0.08, "end_frame": 24})
 
         return {"prompt": prompt, "commands": commands,
                 "matched_rules": len(commands)}

@@ -2,6 +2,20 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.4] - 2026-11-18
+
+### Added
+- 动画新增 4 条（战斗姿态 / 装配）：`anim.bone_keyframe` 单骨骼关键帧、`anim.pose` 批量骨骼姿态、`anim.follow_target` 目标跟随约束、`anim.action_mix` 动作层混合规格。
+- 特效新增 8 条（仙侠能量 / 场景氛围）：`effect.trail` 剑气拖尾、`effect.shockwave` 环形冲击波、`effect.shield` 能量护盾、`effect.lightning` 雷弧闪电、`effect.aura` 灵气光环、`effect.debris` 碎石碎片、`effect.spark` 火花迸发、`effect.camera_shake` 镜头震动。
+- 材质新增 1 条：`material.emission` 自发光能量材质。
+- 新增案例 4「仙侠打斗镜头」演示指令序列；Mock 自然语言规则补充剑气 / 护盾 / 雷弧 / 灵气 / 冲击波 / 火花 / 碎片 / 震屏关键词；前端新增 5 个特效模板。
+
+### Changed
+- 指令规模更新为建模 35 / 动画 17 / 材质 10 / 特效 18；API 文档、示例提示词与案例清单同步。
+
+### 测试
+- 新增打斗姿态 / 约束 / 特效时序守卫与注册清单用例，共 58 个单元测试全部通过。
+
 ## [1.1.3] - 2026-11-18
 
 ### Added
@@ -73,7 +87,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.4
 [1.1.3]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.3
 [1.1.2]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.2
 [1.1.1]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.1

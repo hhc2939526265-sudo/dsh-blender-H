@@ -56,6 +56,18 @@ class _MeshObj(_Obj):
         self.data.edges = []
 
 
+class _ArmatureStub:
+    """最小骨架桩：pose.bones 字典 + 约束列表桩。"""
+
+    def __init__(self, name="Rig"):
+        self.name = name
+        self.type = "ARMATURE"
+        bone = types.SimpleNamespace(
+            constraints=[], rotation_euler=[0.0, 0.0, 0.0],
+            location=[0.0, 0.0, 0.0])
+        self.pose = types.SimpleNamespace(bones={"hips": bone})
+
+
 class TestActiveRef(unittest.TestCase):
 
     def test_active_resolves_to_context_active(self):
@@ -262,16 +274,58 @@ class TestRegistry(unittest.TestCase):
             "mesh.shrinkwrap", "mesh.crease",
             "anim.clear", "anim.ik", "anim.copy_transform",
             "anim.action_list", "anim.parent_set",
+            "anim.bone_keyframe", "anim.pose", "anim.follow_target",
+            "anim.action_mix",
             "material.assign", "material.clear", "material.list",
+            "material.emission",
             "effect.force_field", "effect.light", "effect.world",
             "effect.hair", "effect.motion_blur",
+            "effect.trail", "effect.shockwave", "effect.shield",
+            "effect.lightning", "effect.aura", "effect.debris",
+            "effect.spark", "effect.camera_shake",
         ]
         for cmd in expected:
             self.assertIn(cmd, names)
         self.assertEqual(len([n for n in names if n.startswith("mesh.")]), 35)
-        self.assertEqual(len([n for n in names if n.startswith("anim.")]), 13)
-        self.assertEqual(len([n for n in names if n.startswith("material.")]), 9)
-        self.assertEqual(len([n for n in names if n.startswith("effect.")]), 10)
+        self.assertEqual(len([n for n in names if n.startswith("anim.")]), 17)
+        self.assertEqual(len([n for n in names if n.startswith("material.")]), 10)
+        self.assertEqual(len([n for n in names if n.startswith("effect.")]), 18)
+
+
+class TestFightAnimationGuards(unittest.TestCase):
+
+    def setUp(self):
+        self.obj = _Obj()
+        bpy.context.view_layer.objects.active = self.obj
+
+    def test_pose_empty_rejected(self):
+        with self.assertRaises(ValueError):
+            animation.pose({"object": "active", "poses": {}}, None)
+
+    def test_follow_bad_constraint_rejected(self):
+        with self.assertRaises(ValueError):
+            animation.follow_target({"object": "active", "target": "active",
+                                     "constraint": "TELEPORT"}, None)
+
+    def test_action_mix_empty_layers_rejected(self):
+        with self.assertRaises(ValueError):
+            animation.action_mix({"object": "active", "layers": []}, None)
+
+    def test_bone_keyframe_missing_bone(self):
+        arm = _ArmatureStub()
+        bpy.context.view_layer.objects.active = arm
+        with self.assertRaises(KeyError):
+            animation.bone_keyframe({"object": "active", "bone": "no_bone",
+                                     "rotation": [0, 0, 0]}, None)
+
+    def test_lightning_missing_start_rejected(self):
+        with self.assertRaises(ValueError):
+            effects.lightning({"end": [1, 1, 1]}, None)
+
+    def test_shockwave_inverted_timing_rejected(self):
+        with self.assertRaises(ValueError):
+            effects.shockwave({"object": "active",
+                               "shockwave": {"timing": [24, 0]}}, None)
 
 
 if __name__ == "__main__":

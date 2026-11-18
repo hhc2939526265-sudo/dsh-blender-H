@@ -312,6 +312,103 @@ def parent_set(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"object": obj.name, "parent": parent.name if parent else None}
 
 
+# ---------------------------------------------------------------------------
+# 14. 单骨骼关键帧（战斗姿态逐骨骼控制）
+# ---------------------------------------------------------------------------
+def bone_keyframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    armature = H.require_object(payload["object"])
+    bone_name = payload["bone"]
+    pb = armature.pose.bones.get(bone_name)
+    if pb is None:
+        raise KeyError(f"骨骼不存在: {bone_name}")
+    frame = float(payload.get("frame", 0))
+    if "rotation" in payload:
+        rot = payload["rotation"]
+        if not isinstance(rot, (list, tuple)) or len(rot) != 3:
+            raise ValueError("骨骼旋转需为 3 个分量 [X, Y, Z]")
+        pb.rotation_euler = rot
+        pb.keyframe_insert(data_path="rotation_euler", frame=frame)
+    if "location" in payload:
+        loc = payload["location"]
+        if not isinstance(loc, (list, tuple)) or len(loc) != 3:
+            raise ValueError("骨骼位置需为 3 个分量 [X, Y, Z]")
+        pb.location = loc
+        pb.keyframe_insert(data_path="location", frame=frame)
+    return {"armature": armature.name, "bone": bone_name, "frame": frame}
+
+
+# ---------------------------------------------------------------------------
+# 15. 批量骨骼姿态（出拳 / 格挡 / 挥剑 / 腾空等战斗姿态）
+# ---------------------------------------------------------------------------
+def pose(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    armature = H.require_object(payload["object"])
+    poses: Dict[str, Any] = payload.get("poses") or {}
+    if not poses:
+        raise ValueError("poses 姿态表不能为空")
+    frame = float(payload.get("frame", 0))
+    applied: List[str] = []
+    for bone_name, spec in poses.items():
+        pb = armature.pose.bones.get(bone_name)
+        if pb is None:
+            ctx.log("warning", f"姿态骨骼不存在，已跳过: {bone_name}")
+            continue
+        if "rotation" in spec:
+            pb.rotation_euler = spec["rotation"]
+            pb.keyframe_insert(data_path="rotation_euler", frame=frame)
+        if "location" in spec:
+            pb.location = spec["location"]
+            pb.keyframe_insert(data_path="location", frame=frame)
+        applied.append(bone_name)
+    return {"armature": armature.name, "frame": frame, "bones": applied}
+
+
+# ---------------------------------------------------------------------------
+# 16. 目标跟随约束（武器 / 攻击点 / 镜头锁定目标）
+# ---------------------------------------------------------------------------
+_FOLLOW_CONSTRAINTS = {
+    "COPY_TRANSFORMS", "COPY_LOCATION", "COPY_ROTATION",
+    "COPY_SCALE", "TRACK_TO", "FOLLOW_PATH",
+}
+
+
+def follow_target(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    target = H.require_object(payload["target"])
+    ctype = payload.get("constraint", "COPY_TRANSFORMS")
+    if ctype not in _FOLLOW_CONSTRAINTS:
+        raise ValueError(f"不支持的跟随约束类型: {ctype}")
+    bone_name = payload.get("bone")
+    owner = obj
+    if bone_name:
+        pb = obj.pose.bones.get(bone_name)
+        if pb is None:
+            raise KeyError(f"骨骼不存在: {bone_name}")
+        owner = pb
+    con = owner.constraints.new(type=ctype)
+    con.target = target
+    con.influence = float(payload.get("influence", 1.0))
+    return {"object": obj.name, "bone": bone_name, "target": target.name,
+            "constraint": ctype, "influence": con.influence}
+
+
+# ---------------------------------------------------------------------------
+# 17. 动作层混合（NLA 权重规格，真机由解算器落地）
+# ---------------------------------------------------------------------------
+def action_mix(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    layers = payload.get("layers", [])
+    if not isinstance(layers, list) or not layers:
+        raise ValueError("layers 动作层列表不能为空")
+    for layer in layers:
+        if "action" not in layer:
+            raise ValueError("每个动作层需包含 action 名称")
+    # NLA 混合需在真机 Blender 内逐条挂载动作条；这里先记录混合规格，
+    # 与物理烘焙一致由渲染前解算器落地，避免在桩环境做伪实现。
+    ctx.bridge.push_event("anim.action_mix",
+                          {"object": obj.name, "layers": layers})
+    return {"object": obj.name, "layers": len(layers)}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("anim.keyframe", keyframe, ["object", "frames"])
     dispatcher.register("anim.rig_auto", rig_auto, ["object"])
@@ -327,3 +424,7 @@ def register(dispatcher) -> None:
     dispatcher.register("anim.copy_transform", copy_transform, ["object", "target"])
     dispatcher.register("anim.action_list", action_list)
     dispatcher.register("anim.parent_set", parent_set, ["object"])
+    dispatcher.register("anim.bone_keyframe", bone_keyframe, ["object", "bone"])
+    dispatcher.register("anim.pose", pose, ["object", "poses"])
+    dispatcher.register("anim.follow_target", follow_target, ["object", "target"])
+    dispatcher.register("anim.action_mix", action_mix, ["object", "layers"])

@@ -14,10 +14,28 @@ from __future__ import annotations
 
 import bpy
 import math
+import random
 from typing import Any, Dict, List, Optional
 
 from ..compat import version_compat
 from . import _helpers as H
+
+
+def _emission_material(name: str, color: List[float], strength: float,
+                       alpha: float = 1.0) -> bpy.types.Material:
+    """新建自发光材质（剑气 / 雷弧 / 灵气 / 护盾通用）。"""
+    mat = bpy.data.materials.new(name=name)
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+    out = nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+    version_compat.set_principled_input(bsdf, "base_color", color)
+    version_compat.set_principled_input(bsdf, "emission", color)
+    version_compat.set_principled_input(bsdf, "emission_strength", strength)
+    version_compat.set_principled_input(bsdf, "alpha", alpha)
+    links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    return mat
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +320,238 @@ def motion_blur(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"enabled": enabled, "factor": factor, "compositor": ok}
 
 
+# ---------------------------------------------------------------------------
+# 11. 运动拖尾（剑气 / 飞剑 / 身法残影）
+# ---------------------------------------------------------------------------
+def trail(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    emitter = H.require_object(payload["object"])
+    spec = payload.get("trail", {})
+    length = float(spec.get("length", 0.6))
+    width = float(spec.get("width", 0.02))
+    color = spec.get("color", [0.4, 0.8, 1.0, 1.0])
+    segments = int(spec.get("segments", 5))
+
+    curve_data = bpy.data.curves.new(name=f"{emitter.name}_Trail", type="CURVE")
+    curve_data.dimensions = "3D"
+    curve_data.bevel_depth = width
+    spline = curve_data.splines.new("POLY")
+    spline.points.add(segments)
+    for i, pt in enumerate(spline.points):
+        t = i / max(1, segments)
+        pt.co = (0.0, -length * t, 0.0, 1.0)
+    trail_obj = bpy.data.objects.new(curve_data.name, curve_data)
+    bpy.context.collection.objects.link(trail_obj)
+    trail_obj.parent = emitter
+    trail_obj.data.materials.append(_emission_material(f"{curve_data.name}_Mat",
+                                                       color, float(spec.get("strength", 2.0))))
+    return {"emitter": emitter.name, "trail": trail_obj.name, "length": length}
+
+
+# ---------------------------------------------------------------------------
+# 12. 环形冲击波（命中 / 落地气浪）
+# ---------------------------------------------------------------------------
+def shockwave(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    emitter = H.require_object(payload["object"])
+    spec = payload.get("shockwave", {})
+    timing = spec.get("timing", [0, 24])
+    if not isinstance(timing, (list, tuple)) or len(timing) < 2:
+        raise ValueError("冲击波时序 timing 至少需要起始 / 结束两个帧号")
+    start_frame, end_frame = float(timing[0]), float(timing[1])
+    if end_frame <= start_frame:
+        raise ValueError("冲击波结束帧必须大于起始帧")
+    max_radius = float(spec.get("max_radius", 2.0))
+    color = spec.get("color", [0.7, 0.9, 1.0, 1.0])
+
+    ring_data = bpy.data.curves.new(name=f"{emitter.name}_Wave", type="CURVE")
+    ring_data.dimensions = "3D"
+    ring_data.bevel_depth = float(spec.get("width", 0.03))
+    ring = ring_data.splines.new("POLY")
+    ring.points.add(31)
+    for i, pt in enumerate(ring.points):
+        ang = 2 * math.pi * i / 31
+        pt.co = (math.cos(ang), math.sin(ang), 0.0, 1.0)
+    ring.use_cyclic_u = True
+    wave_obj = bpy.data.objects.new(ring_data.name, ring_data)
+    bpy.context.collection.objects.link(wave_obj)
+    wave_obj.location = emitter.location
+    wave_obj.data.materials.append(_emission_material(f"{ring_data.name}_Mat",
+                                                     color, float(spec.get("strength", 3.0))))
+    # 半径扩散 + 淡出关键帧
+    wave_obj.scale = (0.01, 0.01, 0.01)
+    wave_obj.keyframe_insert(data_path="scale", frame=start_frame)
+    wave_obj.scale = (max_radius, max_radius, max_radius)
+    wave_obj.keyframe_insert(data_path="scale", frame=end_frame)
+    return {"emitter": emitter.name, "wave": wave_obj.name,
+            "max_radius": max_radius, "timing": timing}
+
+
+# ---------------------------------------------------------------------------
+# 13. 能量护盾（护体灵光 / 结界）
+# ---------------------------------------------------------------------------
+def shield(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    owner = H.require_object(payload["object"])
+    spec = payload.get("shield", {})
+    radius = float(spec.get("radius", 0.8))
+    color = spec.get("color", [0.3, 0.6, 1.0, 1.0])
+    bpy.ops.mesh.primitive_ico_sphere_add(radius=radius, subdivisions=2)
+    shield_obj = bpy.context.active_object
+    shield_obj.name = H.unique_name(f"{owner.name}_Shield")
+    shield_obj.parent = owner
+    mat = _emission_material(f"{shield_obj.name}_Mat", color,
+                             float(spec.get("strength", 1.2)),
+                             alpha=float(spec.get("alpha", 0.25)))
+    shield_obj.data.materials.append(mat)
+    if spec.get("wireframe", True):
+        H.add_modifier(shield_obj, "WIREFRAME", "shield_wire")
+    return {"owner": owner.name, "shield": shield_obj.name, "radius": radius}
+
+
+# ---------------------------------------------------------------------------
+# 14. 雷弧闪电（法术 / 雷击）
+# ---------------------------------------------------------------------------
+def lightning(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    start = payload.get("start")
+    end = payload.get("end")
+    if not (isinstance(start, (list, tuple)) and len(start) == 3):
+        raise ValueError("雷弧起点 start 需为 [X, Y, Z]")
+    if not (isinstance(end, (list, tuple)) and len(end) == 3):
+        raise ValueError("雷弧终点 end 需为 [X, Y, Z]")
+    segments = max(1, int(payload.get("segments", 8)))
+    spec = payload.get("lightning", {})
+    color = spec.get("color", [0.8, 0.9, 1.0, 1.0])
+    rng = random.Random(spec.get("seed", 7))
+
+    curve_data = bpy.data.curves.new(name="Lightning_Arc", type="CURVE")
+    curve_data.dimensions = "3D"
+    curve_data.bevel_depth = float(spec.get("width", 0.015))
+    spline = curve_data.splines.new("POLY")
+    spline.points.add(segments)
+    for i, pt in enumerate(spline.points):
+        t = i / segments
+        x = start[0] + (end[0] - start[0]) * t
+        y = start[1] + (end[1] - start[1]) * t
+        z = start[2] + (end[2] - start[2]) * t
+        if 0 < i < segments:
+            x += rng.uniform(-0.08, 0.08)
+            y += rng.uniform(-0.08, 0.08)
+            z += rng.uniform(-0.08, 0.08)
+        pt.co = (x, y, z, 1.0)
+    arc_obj = bpy.data.objects.new(curve_data.name, curve_data)
+    bpy.context.collection.objects.link(arc_obj)
+    arc_obj.data.materials.append(_emission_material(f"{curve_data.name}_Mat",
+                                                     color, float(spec.get("strength", 5.0))))
+    return {"arc": arc_obj.name, "segments": segments}
+
+
+# ---------------------------------------------------------------------------
+# 15. 周身灵气光环（待机 / 施法脉动）
+# ---------------------------------------------------------------------------
+def aura(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    owner = H.require_object(payload["object"])
+    spec = payload.get("aura", {})
+    radius = float(spec.get("radius", 0.6))
+    color = spec.get("color", [0.2, 0.9, 0.6, 1.0])
+    cycle = int(spec.get("cycle", 24))
+
+    aura_data = bpy.data.curves.new(name=f"{owner.name}_Aura", type="CURVE")
+    aura_data.dimensions = "3D"
+    aura_data.bevel_depth = float(spec.get("width", 0.02))
+    ring = aura_data.splines.new("POLY")
+    ring.points.add(31)
+    for i, pt in enumerate(ring.points):
+        ang = 2 * math.pi * i / 31
+        pt.co = (math.cos(ang) * radius, math.sin(ang) * radius, 0.0, 1.0)
+    ring.use_cyclic_u = True
+    aura_obj = bpy.data.objects.new(aura_data.name, aura_data)
+    bpy.context.collection.objects.link(aura_obj)
+    aura_obj.parent = owner
+    aura_obj.data.materials.append(_emission_material(f"{aura_data.name}_Mat",
+                                                      color, float(spec.get("strength", 2.0))))
+    # 呼吸脉动：0 → 放大 → 回收
+    for frame, scale_k in ((0, 1.0), (cycle // 2, 1.15), (cycle, 1.0)):
+        aura_obj.scale = (scale_k, scale_k, scale_k)
+        aura_obj.keyframe_insert(data_path="scale", frame=frame)
+    return {"owner": owner.name, "aura": aura_obj.name, "cycle": cycle}
+
+
+# ---------------------------------------------------------------------------
+# 16. 碎石碎片飞溅（场景破坏 / 命中碎屑）
+# ---------------------------------------------------------------------------
+def debris(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    owner = H.require_object(payload["object"])
+    spec = payload.get("debris", {})
+    count = max(1, int(spec.get("count", 12)))
+    size = float(spec.get("size", 0.05))
+    rng = random.Random(spec.get("seed", 11))
+    pieces: List[str] = []
+    for i in range(count):
+        bpy.ops.mesh.primitive_cube_add(size=size, location=owner.location)
+        piece = bpy.context.active_object
+        piece.name = H.unique_name(f"{owner.name}_Debris_{i:02d}")
+        piece.rotation_euler = (rng.random() * math.pi, rng.random() * math.pi,
+                                rng.random() * math.pi)
+        try:
+            bpy.ops.rigidbody.object_add()
+            piece.rigid_body.type = "ACTIVE"
+        except RuntimeError:
+            pass
+        pieces.append(piece.name)
+    ctx.bridge.push_event("effect.debris_velocity",
+                          {"owner": owner.name, "pieces": pieces,
+                           "speed": float(spec.get("speed", 3.0))})
+    return {"owner": owner.name, "debris": pieces, "count": len(pieces)}
+
+
+# ---------------------------------------------------------------------------
+# 17. 火花迸发（命中 / 兵刃交击）
+# ---------------------------------------------------------------------------
+def spark(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    emitter = H.require_object(payload["object"])
+    spec = payload.get("spark", {})
+    count = int(spec.get("count", 120))
+    life = float(spec.get("life", 0.6))
+    speed = float(spec.get("speed", 3.0))
+    color = spec.get("color", [1.0, 0.85, 0.3, 1.0])
+    mod = emitter.modifiers.new(name="effect_spark", type="PARTICLE_SYSTEM")
+    settings = mod.particle_system.settings
+    settings.type = "EMITTER"
+    settings.count = count
+    settings.lifetime = int(life * ctx.config.get("animation_fps", 24))
+    settings.normal_factor = speed
+    settings.particle_size = float(spec.get("size", 0.02))
+    settings.render_type = "HALO"
+    ctx.bridge.push_event("effect.spark_color",
+                          {"emitter": emitter.name, "color": color})
+    return {"emitter": emitter.name, "count": count, "speed": speed, "life": life}
+
+
+# ---------------------------------------------------------------------------
+# 18. 镜头震动（打击 / 爆炸冲击）
+# ---------------------------------------------------------------------------
+def camera_shake(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    scene = bpy.context.scene
+    cam = scene.camera
+    if cam is None:
+        raise KeyError("当前场景未设置摄像机")
+    amplitude = float(payload.get("amplitude", 0.08))
+    end_frame = int(payload.get("end_frame", 24))
+    frequency = int(payload.get("frequency", 3))
+    rng = random.Random(payload.get("seed", 5))
+    frames = list(range(0, end_frame + 1, max(1, end_frame // frequency)))
+    base_loc = list(cam.location)
+    base_rot = list(cam.rotation_euler)
+    for frame in frames:
+        cam.location = [base_loc[0] + rng.uniform(-amplitude, amplitude),
+                        base_loc[1] + rng.uniform(-amplitude, amplitude),
+                        base_loc[2] + rng.uniform(-amplitude, amplitude)]
+        cam.rotation_euler = [base_rot[0] + rng.uniform(-amplitude, amplitude),
+                              base_rot[1] + rng.uniform(-amplitude, amplitude),
+                              base_rot[2] + rng.uniform(-amplitude, amplitude)]
+        cam.keyframe_insert(data_path="location", frame=frame)
+        cam.keyframe_insert(data_path="rotation_euler", frame=frame)
+    return {"camera": cam.name, "amplitude": amplitude, "frames": end_frame}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("effect.particle", particle, ["object"])
     dispatcher.register("effect.glow", glow, ["object"])
@@ -313,3 +563,11 @@ def register(dispatcher) -> None:
     dispatcher.register("effect.world", world)
     dispatcher.register("effect.hair", hair, ["object"])
     dispatcher.register("effect.motion_blur", motion_blur)
+    dispatcher.register("effect.trail", trail, ["object"])
+    dispatcher.register("effect.shockwave", shockwave, ["object"])
+    dispatcher.register("effect.shield", shield, ["object"])
+    dispatcher.register("effect.lightning", lightning)
+    dispatcher.register("effect.aura", aura, ["object"])
+    dispatcher.register("effect.debris", debris, ["object"])
+    dispatcher.register("effect.spark", spark, ["object"])
+    dispatcher.register("effect.camera_shake", camera_shake)

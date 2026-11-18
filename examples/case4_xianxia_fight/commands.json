@@ -1,0 +1,78 @@
+{
+  "case": "case4_xianxia_fight",
+  "title": "仙侠打斗镜头：姿态 + 武器跟随 + 剑气/护盾/雷弧/冲击 + 镜头震动",
+  "steps": [
+    {
+      "cmd_type": "anim.pose",
+      "payload": {
+        "object": "Character_Rig",
+        "frame": 0,
+        "poses": {
+          "right_upper_arm": { "rotation": [0.0, 0.0, -1.2] },
+          "right_forearm": { "rotation": [0.0, 0.0, -0.4] },
+          "left_upper_arm": { "rotation": [0.0, 0.0, 0.8] },
+          "spine": { "rotation": [0.0, 0.15, 0.0] }
+        }
+      },
+      "note": "摆出起手挥剑姿态（骨骼姿态可二次编辑）"
+    },
+    {
+      "cmd_type": "anim.follow_target",
+      "payload": { "object": "Sword", "target": "right_hand", "constraint": "COPY_TRANSFORMS" },
+      "note": "武器跟随右手骨骼移动"
+    },
+    {
+      "cmd_type": "material.emission",
+      "payload": { "object": "Sword", "color": [0.3, 0.8, 1.0, 1.0], "strength": 3.0 },
+      "note": "剑身附青色自发光"
+    },
+    {
+      "cmd_type": "effect.trail",
+      "payload": { "object": "Sword", "trail": { "length": 0.6, "width": 0.02, "color": [0.3, 0.8, 1.0, 1.0], "strength": 2.0 } },
+      "note": "剑气拖尾"
+    },
+    {
+      "cmd_type": "effect.aura",
+      "payload": { "object": "Character_Body", "aura": { "radius": 0.6, "color": [0.2, 0.9, 0.6, 1.0], "cycle": 24 } },
+      "note": "周身灵气光环呼吸脉动"
+    },
+    {
+      "cmd_type": "effect.shield",
+      "payload": { "object": "Character_Body", "shield": { "radius": 0.8, "color": [0.3, 0.6, 1.0, 1.0], "alpha": 0.25 } },
+      "note": "护体能量护盾"
+    },
+    {
+      "cmd_type": "effect.spark",
+      "payload": { "object": "Sword", "spark": { "count": 120, "speed": 3.0, "life": 0.6, "color": [1.0, 0.85, 0.3, 1.0] } },
+      "note": "兵刃交击火花"
+    },
+    {
+      "cmd_type": "effect.debris",
+      "payload": { "object": "Character_Body", "debris": { "count": 12, "size": 0.05, "speed": 3.0 } },
+      "note": "命中碎石飞溅（刚体）"
+    },
+    {
+      "cmd_type": "effect.shockwave",
+      "payload": { "object": "Character_Body", "shockwave": { "timing": [12, 24], "max_radius": 2.0, "color": [0.7, 0.9, 1.0, 1.0] } },
+      "note": "命中环形气浪扩散"
+    },
+    {
+      "cmd_type": "effect.lightning",
+      "payload": {
+        "start": [0.0, -1.0, 2.0], "end": [0.0, 1.0, 1.2], "segments": 8,
+        "lightning": { "color": [0.8, 0.9, 1.0, 1.0], "width": 0.015, "strength": 5.0 }
+      },
+      "note": "两道角色之间雷弧"
+    },
+    {
+      "cmd_type": "effect.camera_shake",
+      "payload": { "amplitude": 0.08, "end_frame": 24, "frequency": 3 },
+      "note": "打击瞬间镜头震动"
+    },
+    {
+      "cmd_type": "render.execute",
+      "payload": { "animation": false },
+      "note": "渲染静帧并分片回传 DSH 预览"
+    }
+  ]
+}

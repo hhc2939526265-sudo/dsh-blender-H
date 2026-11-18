@@ -203,6 +203,26 @@ def list_materials(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     return {"objects": per_object, "materials": all_mats, "count": len(all_mats)}
 
 
+# ---------------------------------------------------------------------------
+# 10. 自发光能量材质（剑气 / 灵光 / 法术附挂）
+# ---------------------------------------------------------------------------
+def emission(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    obj = H.require_object(payload["object"])
+    mat_name = payload.get("material_name", f"Glow_{obj.name}")
+    mat = _new_pbr_material(mat_name)
+    bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    color = payload.get("color", [1.0, 0.8, 0.3, 1.0])
+    version_compat.set_principled_input(bsdf, "base_color", color)
+    version_compat.set_principled_input(bsdf, "emission", color)
+    version_compat.set_principled_input(bsdf, "emission_strength",
+                                        float(payload.get("strength", 3.0)))
+    if "alpha" in payload:
+        version_compat.set_principled_input(bsdf, "alpha", payload["alpha"])
+    obj.data.materials.append(mat)
+    return {"object": obj.name, "material": mat.name,
+            "strength": float(payload.get("strength", 3.0))}
+
+
 def register(dispatcher) -> None:
     dispatcher.register("material.pbr_generate", pbr_generate, ["object"])
     dispatcher.register("material.batch_replace", batch_replace,
@@ -214,3 +234,4 @@ def register(dispatcher) -> None:
     dispatcher.register("material.assign", assign, ["object", "material_name"])
     dispatcher.register("material.clear", clear, ["object"])
     dispatcher.register("material.list", list_materials)
+    dispatcher.register("material.emission", emission, ["object"])

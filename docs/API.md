@@ -135,7 +135,7 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | character.shape_keys | 写入面部形状键 | object, shape_keys[] |
 | character.uv_bake | 参考图 PBR 烘焙 | object, image_path |
 
-### 3.4 动画指令（13 种）
+### 3.4 动画指令（17 种）
 
 | cmd_type | 说明 | 必填参数 |
 |---|---|---|
@@ -152,8 +152,12 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | anim.copy_transform | 复制变换约束 | object, target, influence |
 | anim.action_list | 列出场景动作数据 | 可选 object |
 | anim.parent_set | 对象父子绑定 | object, parent, keep_transform |
+| anim.bone_keyframe | 单骨骼关键帧 | object, bone, frame, rotation/location |
+| anim.pose | 批量骨骼战斗姿态 | object, poses{bone:{rotation,location}}, frame |
+| anim.follow_target | 目标跟随约束 | object, target, constraint, bone, influence |
+| anim.action_mix | 动作层混合权重规格 | object, layers[{action,weight}] |
 
-### 3.5 特效指令（10 种）
+### 3.5 特效指令（18 种）
 
 | cmd_type | 说明 |
 |---|---|
@@ -167,8 +171,16 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | effect.world | 世界环境背景色 / 强度 | color, strength |
 | effect.hair | 毛发粒子（数量 / 长度 / 颜色） | object, hair.count/length |
 | effect.motion_blur | 合成运动模糊 | enabled, factor |
+| effect.trail | 剑气 / 身法运动拖尾 | object, trail.length/width/color |
+| effect.shockwave | 环形冲击波扩散 | object, shockwave.timing/max_radius/color |
+| effect.shield | 能量护盾球壳 | object, shield.radius/color/alpha |
+| effect.lightning | 雷弧闪电折线 | start, end, segments, lightning.color |
+| effect.aura | 周身灵气光环脉动 | object, aura.radius/color/cycle |
+| effect.debris | 碎石碎片刚体飞溅 | object, debris.count/size/speed |
+| effect.spark | 火花迸发粒子 | object, spark.count/speed/life/color |
+| effect.camera_shake | 镜头震动 | amplitude, end_frame, frequency |
 
-### 3.6 材质指令（9 种）
+### 3.6 材质指令（10 种）
 
 | cmd_type | 说明 | 必填参数 |
 |---|---|---|
@@ -181,6 +193,7 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | material.assign | 把已有材质分配给对象 | object, material_name, replace |
 | material.clear | 清空对象材质槽 | object |
 | material.list | 材质清单（对象挂载 + 场景全部材质） | 可选 objects[] |
+| material.emission | 自发光能量材质 | object, color, strength, alpha |
 
 ### 3.7 渲染 / 场景 / 导出
 

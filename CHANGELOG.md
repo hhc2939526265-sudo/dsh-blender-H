@@ -2,7 +2,7 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.1.0] - 2026-11-18
 
 ### Added
 - 第三方插件生态：新增 `addon.list / addon.detail / addon.invoke / addon.match` 四条指令。
@@ -28,5 +28,6 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.0
 [1.0.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.0.0

@@ -3,7 +3,7 @@
 #
 # GitHub 一键发布脚本（Linux / macOS）
 # 前提：已通过 `gh auth login` 完成 GitHub 授权，或环境变量 GH_TOKEN 有效。
-# 流程：校验登录态 → 推送 main 分支与 v1.0.0 标签 → 创建 Release 并上传三个安装包。
+# 流程：校验登录态 → 推送 main 分支与 v1.1.0 标签 → 创建 Release 并上传三个安装包。
 #
 # 用法：
 #   bash scripts/publish_release.sh            # 仓库已存在
@@ -15,7 +15,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 SLUG="hhc2939526265-sudo/dsh-blender-H"
-TAG="v1.0.0"
+TAG="v1.1.0"
 PACKAGES_DIR="packages"
 
 # ---- 1. 校验 gh 登录态 ----

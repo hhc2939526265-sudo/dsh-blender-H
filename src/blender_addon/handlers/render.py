@@ -19,6 +19,16 @@ from ..utils import paths
 from . import _helpers as H
 
 
+def _safe_output_dir(payload: Dict[str, Any], ctx=None) -> str:
+    """把渲染输出目录收敛到渲染目录下，拒绝逃逸到其他磁盘目录。"""
+    base = (ctx.config.get("render_output_dir") if ctx else None) or paths.subdir("render")
+    raw = payload.get("output_path")
+    if not raw:
+        return base
+    path = os.path.abspath(raw) if os.path.isabs(raw) else os.path.join(base, raw)
+    return paths.require_within(base, path, "渲染输出目录")
+
+
 def switch_engine(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     engine = version_compat.engine_id(payload.get("engine", "EEVEE"))
     bpy.context.scene.render.engine = engine
@@ -45,7 +55,7 @@ def settings(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     if "frame_end" in payload:
         scene.frame_end = int(payload["frame_end"])
     if "output_path" in payload:
-        scene.render.filepath = payload["output_path"]
+        scene.render.filepath = _safe_output_dir(payload, ctx)
     current_samples = scene.cycles.samples if scene.render.engine == "CYCLES" \
         else getattr(scene.eevee, "taa_render_samples", samples)
     return {"engine": scene.render.engine,
@@ -55,8 +65,8 @@ def settings(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def execute(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     scene = bpy.context.scene
-    # 输出路径准备
-    out_dir = payload.get("output_path") or paths.subdir("render")
+    # 输出路径准备（收敛到渲染目录下，防任意目录写入）
+    out_dir = _safe_output_dir(payload, ctx)
     os.makedirs(out_dir, exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
     is_animation = bool(payload.get("animation", False))

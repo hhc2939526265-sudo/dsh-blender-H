@@ -195,6 +195,7 @@
         $("character-meta").textContent = JSON.stringify(res, null, 2);
         this.store.addLog("INFO", `角色生成完成: ${res.body || ""}`);
       } catch (e) {
+        this._recordHistory("pipeline.character", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `角色生成失败: ${e.message}`);
       } finally { btn.disabled = false; }
     }
@@ -215,6 +216,7 @@
         $("motion-meta").textContent = JSON.stringify(res, null, 2);
         this.store.addLog("INFO", "视频解析与复刻完成");
       } catch (e) {
+        this._recordHistory("pipeline.video", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `视频复刻失败: ${e.message}`);
       } finally { btn.disabled = false; }
     }
@@ -230,6 +232,7 @@
         $("nl-result").textContent = JSON.stringify(res, null, 2);
         this._recordHistory("nl.dispatch", res);
       } catch (e) {
+        this._recordHistory("nl.dispatch", { error: e.message }, "FAILED");
         $("nl-result").textContent = `错误: ${e.message}`;
         this.store.addLog("ERROR", e.message);
       }
@@ -247,6 +250,7 @@
         $("render-meta").textContent = JSON.stringify(res, null, 2);
         this._recordHistory("render.execute", res);
       } catch (e) {
+        this._recordHistory("render.execute", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `渲染失败: ${e.message}`);
       }
     }
@@ -260,6 +264,7 @@
         this._recordHistory("pipeline.iterate", res);
         this.store.addLog("INFO", "资产已回传，可在 DSH 端继续 AI 优化");
       } catch (e) {
+        this._recordHistory("pipeline.iterate", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `回传失败: ${e.message}`);
       }
     }
@@ -385,6 +390,7 @@
         this._recordHistory("addon.invoke", res);
         this.store.addLog("INFO", `算子调用成功: ${operator}`);
       } catch (e) {
+        this._recordHistory("addon.invoke", { error: e.message }, "FAILED");
         $("addon-invoke-result").textContent = `错误: ${e.message}`;
         this.store.addLog("ERROR", `算子调用失败: ${e.message}`);
       }
@@ -406,10 +412,11 @@
     // ------------------------------------------------------- 预览
     _onPreview(detail) {
       if (!detail) return;
+      const safeName = this._esc(detail.filename || "");
       const isVideo = /\.(mp4|webm|mov)$/i.test(detail.filename || "");
       const html = isVideo
         ? `<video src="${detail.url}" controls autoplay loop />`
-        : `<img src="${detail.url}" alt="${detail.filename}" />`;
+        : `<img src="${detail.url}" alt="${safeName}" />`;
       const stage = $("render-preview");
       if (stage) stage.innerHTML = html;
       // 同时回填到当前激活页签的预览区
@@ -418,8 +425,8 @@
     }
 
     // ------------------------------------------------------- 历史 / 预设
-    _recordHistory(cmd, result) {
-      this.store.addHistory({ cmd, status: result && result._elapsed_ms !== undefined ? "SUCCESS" : "SUCCESS", result });
+    _recordHistory(cmd, result, status) {
+      this.store.addHistory({ cmd, status: status || "SUCCESS", result });
       this._renderHistory();
     }
 

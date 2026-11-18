@@ -13,11 +13,13 @@
 
 from __future__ import annotations
 
+import os
 import bpy
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..compat import version_compat
+from ..utils import paths
 from . import _helpers as H
 
 
@@ -52,7 +54,7 @@ def _add_part(ptype: str, name: str, location: Tuple[float, ...],
 
 def _join_objects(objects: List[bpy.types.Object], name: str) -> bpy.types.Object:
     """合并对象为一个网格。"""
-    version_compat.deselect_all()
+    H.deselect_all()
     for obj in objects:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = objects[0]
@@ -179,8 +181,9 @@ def rig_object(mesh_obj: bpy.types.Object, armature: Optional[bpy.types.Object] 
     """为网格创建 / 复用骨架并执行自动权重绑定。"""
     if armature is None:
         armature = build_armature(H.unique_name("Character_Rig"))
-    # 骨架置于网格层级下
-    if mesh_obj.name not in armature.children:
+    # 骨架置于网格层级下（children 是对象集合，按子对象名集合判断归属）
+    child_names = {child.name for child in armature.children}
+    if mesh_obj.name not in child_names:
         mesh_obj.parent = armature
     # 自动权重：先加骨架修改器，再用自动权重算子
     for mod in list(mesh_obj.modifiers):
@@ -188,7 +191,7 @@ def rig_object(mesh_obj: bpy.types.Object, armature: Optional[bpy.types.Object] 
             mesh_obj.modifiers.remove(mod)
     mesh_obj.modifiers.new(name="rig", type="ARMATURE").object = armature
 
-    version_compat.deselect_all()
+    H.deselect_all()
     mesh_obj.select_set(True)
     armature.select_set(True)
     bpy.context.view_layer.objects.active = armature
@@ -264,10 +267,13 @@ def build(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     # 4) 面部形状键
     key_count = _add_shape_keys(body, spec.get("shape_keys", []))
 
-    # 5) 皮肤材质（优先从首图提取平均色）
+    # 5) 皮肤材质（优先从首图提取平均色；仅读取传输目录内图片，防任意本地文件加载）
     skin_color = spec.get("skin_color", [0.82, 0.66, 0.55, 1.0])
-    if image_paths:
-        avg = _average_image_color(image_paths[0])
+    transfer_dir = paths.subdir("transfer")
+    safe_images = [p for p in image_paths
+                   if paths.is_within(transfer_dir, os.path.abspath(p))]
+    if safe_images:
+        avg = _average_image_color(safe_images[0])
         if avg:
             skin_color = avg
     skin_mat = _create_material("Skin_Mat", skin_color, roughness=0.55)
@@ -342,9 +348,15 @@ def uv_bake(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         metallic=float(payload.get("metallic", 0.0)))
     obj.data.materials.clear()
     obj.data.materials.append(mat)
+    # 按节点类型查找 Principled BSDF，避免节点被重命名后取空；插槽缺失时静默降级
+    bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    color_out = None
+    if bsdf is not None:
+        sock = version_compat.get_principled_input(bsdf, "base_color")
+        if sock is not None:
+            color_out = list(sock.default_value)
     return {"object": obj.name, "material": mat.name,
-            "color": list(mat.node_tree.nodes.get("Principled BSDF").inputs["Base Color"].default_value)
-            if color else None}
+            "color": color_out if color else None}
 
 
 def spec_default_keys() -> List[str]:

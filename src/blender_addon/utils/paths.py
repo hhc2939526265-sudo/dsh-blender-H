@@ -61,6 +61,34 @@ def temp_path(filename: str) -> str:
     return os.path.join(subdir("temp"), os.path.basename(filename))
 
 
+def safe_name(filename: str) -> str:
+    """清洗文件名，剥离路径成分，防止目录穿越；非法名抛 ValueError。"""
+    safe = os.path.basename(str(filename or "")).strip()
+    if not safe or safe in (".", ".."):
+        raise ValueError("文件名非法（为空或包含路径穿越）")
+    return safe
+
+
+def safe_join(subdir_key: str, filename: str) -> str:
+    """在指定逻辑子目录下拼接清洗后的安全文件路径。"""
+    return os.path.join(subdir(subdir_key), safe_name(filename))
+
+
+def is_within(base_dir: str, path: str) -> bool:
+    """判断路径是否位于 base_dir 目录之内（规范化后比较，防 ../ 穿越）。"""
+    base = os.path.abspath(base_dir)
+    target = os.path.abspath(path)
+    return target == base or target.startswith(base + os.sep)
+
+
+def require_within(base_dir: str, path: str, what: str = "路径") -> str:
+    """校验路径位于允许目录内，越界抛 PermissionError，否则返回规范化路径。"""
+    target = os.path.abspath(path)
+    if not is_within(base_dir, target):
+        raise PermissionError(f"{what}越出允许目录: {path}")
+    return target
+
+
 def cleanup_temp(max_age_seconds: int) -> int:
     """
     清理临时目录中超过保留时长的文件，返回删除数量。

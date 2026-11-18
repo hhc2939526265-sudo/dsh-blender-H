@@ -92,12 +92,26 @@
     }
 
     _assemble(session, endResult) {
-      const decoded = Object.keys(session.chunks)
-        .sort((a, b) => a - b)
-        .map((k) => atob(session.chunks[k]));
+      // 分片完整性：索引集合必须恰好覆盖 0..chunk_count-1
+      const indexes = Object.keys(session.chunks).map(Number).sort((a, b) => a - b);
+      const expected = session.chunk_count || indexes.length;
+      if (indexes.length !== expected || indexes.some((v, i) => v !== i)) {
+        this.store.addLog("ERROR", "回传分片不完整或索引错位，已丢弃");
+        return;
+      }
+      const decoded = indexes.map((k) => atob(session.chunks[k]));
       const binary = decoded.join("");
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+
+      // MD5 校验：校验通过后才生成预览，避免损坏文件进入预览区
+      const expectedMd5 = String(endResult.md5 || session.md5 || "").toLowerCase();
+      const actualMd5 = global.DSHMD5.hex(bytes).toLowerCase();
+      if (expectedMd5 && actualMd5 !== expectedMd5) {
+        this.store.addLog("ERROR", `回传文件 MD5 校验失败: 期望 ${expectedMd5}，实际 ${actualMd5}`);
+        return;
+      }
+
       const blob = new Blob([bytes]);
       const url = URL.createObjectURL(blob);
       this.previewUrls.push(url);

@@ -4,10 +4,14 @@
 
 ### 1.1 连接
 
-- 传输：本地 WebSocket 长连接，默认 `ws://127.0.0.1:8765`
+- 传输：本地 WebSocket 长连接，默认 `ws://127.0.0.1:8765`（仅绑定回环地址，不对外暴露）
 - 编码：UTF-8 JSON 文本帧
-- 心跳：应用层 `system.heartbeat`，30s 间隔；服务端回 `system.pong`；超时 10s 判定断线
+- 心跳：应用层 `system.heartbeat`，30s 间隔；服务端回执 Pong 结果；超时 10s 判定断线
 - 握手：连接建立后客户端发送 `system.handshake`，服务端回执携带服务端版本与已注册指令清单
+- 握手安全：
+  - Origin 白名单：浏览器网页发起的连接会携带 `Origin` 头，本地回环（localhost / 127.0.0.1 / ::1）默认放行，其余主机需在配置 `allowed_origins` 中显式加入；无 `Origin` 头的桌面客户端不受限制。
+  - 共享口令：配置 `auth_token` 非空时，客户端须通过 `Sec-WebSocket-Protocol: dsh-bridge,<token>` 或 `Authorization: Bearer <token>` 携带同一口令，否则握手返回 403。
+  - 连接数：`max_connections` 限制并发连接数，超出后新连接被拒绝。
 
 ### 1.2 消息信封（固定 6 字段）
 
@@ -76,8 +80,11 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | system.handshake | 握手能力协商 | - |
 | system.heartbeat | 心跳 | - |
 | system.stop | 清空排队指令 | - |
-| system.shutdown | 关闭服务 | - |
+| system.shutdown | 关闭桥接服务（回执后延迟停止） | - |
+| system.pong | 预留：心跳 Pong 回执，当前由服务端协议层自动应答 | - |
 | transfer.begin / chunk / end | 分片传输 | 见 2.1 |
+| transfer.ack | 预留：分片确认回执，当前协议未使用 | - |
+| render.result_back | 预留：渲染结果主动回传事件，当前由 `transfer.end` 事件承载 | - |
 
 ### 3.2 建模指令（26 种）
 

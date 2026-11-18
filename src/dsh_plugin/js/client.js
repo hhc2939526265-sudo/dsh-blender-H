@@ -36,7 +36,10 @@
     _open() {
       this._emitStatus("connecting", `正在连接 ${this.url}`);
       try {
-        this.ws = new WebSocket(this.url);
+        // 配置了共享口令时，通过 Sec-WebSocket-Protocol 子协议末段携带
+        const token = this.store.getSetting("auth_token") || "";
+        const protocols = token ? [`dsh-bridge,${token}`] : undefined;
+        this.ws = new WebSocket(this.url, protocols);
       } catch (e) {
         this._emitStatus("error", `连接创建失败: ${e.message}`);
         this._scheduleReconnect();

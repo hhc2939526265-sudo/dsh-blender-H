@@ -46,10 +46,14 @@ class TransferSession:
         self.chunks[index] = data
 
     def is_complete(self) -> bool:
-        return len(self.chunks) == self.chunk_count
+        """分片索引集合必须恰好覆盖 0..chunk_count-1，防止索引错位漏片。"""
+        return len(self.chunks) == self.chunk_count and \
+            set(self.chunks.keys()) == set(range(self.chunk_count))
 
     def merge(self) -> str:
         """合并分片并落盘，返回最终文件路径。"""
+        if not self.is_complete():
+            raise ValueError("分片不完整或索引错位，无法合并")
         os.makedirs(self.save_dir, exist_ok=True)
         safe_name = os.path.basename(self.filename) or f"{self.file_id}.bin"
         final_path = os.path.join(self.save_dir, safe_name)
@@ -79,11 +83,13 @@ class TransferManager:
     """分片会话注册表，线程安全。"""
 
     def __init__(self, save_dir: str, chunk_size: int,
-                 verify_md5: bool = True, resume_enabled: bool = True):
+                 verify_md5: bool = True, resume_enabled: bool = True,
+                 max_total_bytes: int = 2 * 1024 ** 3):
         self.save_dir = save_dir
         self.chunk_size = chunk_size
         self.verify_md5 = verify_md5
         self.resume_enabled = resume_enabled
+        self.max_total_bytes = max_total_bytes
         self._sessions: Dict[str, TransferSession] = {}
         self._lock = threading.Lock()
         os.makedirs(save_dir, exist_ok=True)
@@ -100,6 +106,13 @@ class TransferManager:
         total_size = int(payload.get("total_size", 0))
         md5 = str(payload.get("md5", "")).lower()
         chunk_count = int(payload.get("chunk_count", 0))
+
+        # 入参合法性校验：分片数与总大小必须为正且不超过上限
+        if chunk_count <= 0:
+            return {"ok": False, "error": "chunk_count 必须为正整数"}
+        if total_size < 0 or total_size > self.max_total_bytes:
+            return {"ok": False,
+                    "error": f"文件大小超出上限 {self.max_total_bytes} 字节"}
 
         with self._lock:
             existing = self._sessions.get(file_id)
@@ -126,6 +139,9 @@ class TransferManager:
             if session is None:
                 return {"file_id": file_id, "ok": False,
                         "error": "会话不存在，请先 begin"}
+            if not (0 <= index < session.chunk_count):
+                return {"file_id": file_id, "ok": False,
+                        "error": f"分片索引越界: {index}（0~{session.chunk_count - 1}）"}
             session.add_chunk(index, data)
             return {"file_id": file_id, "ok": True,
                     "received": len(session.chunks),

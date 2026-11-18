@@ -1,7 +1,7 @@
 {
   "id": "com.dsh.blender.bridge",
   "name": "DSH Blender 双向桥接",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "多模态输入 → AI 解析 → Blender 3D 生产 → 迭代优化 → 渲染交付全闭环桥接插件",
   "author": "DSH-Blender Bridge Contributors",
   "entry": "index.html",
@@ -38,6 +38,12 @@
       "min": 1024,
       "max": 65535,
       "label": "通信端口"
+    },
+    "auth_token": {
+      "type": "string",
+      "default": "",
+      "label": "握手共享口令",
+      "description": "留空表示不校验；填写后两端须保持一致，握手时通过子协议携带"
     },
     "auto_reconnect": {
       "type": "boolean",

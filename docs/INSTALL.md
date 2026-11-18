@@ -1,6 +1,6 @@
 # 安装部署手册
 
-> 适用版本：DSH Blender Bridge 1.0.0　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
+> 适用版本：DSH Blender Bridge 1.1.1　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
 
 ## 一、环境要求
 
@@ -83,6 +83,19 @@
 2. 推理网关按《开发接口文档》「外部 AI 服务对接」一节实现 `analyze_character /
    analyze_motion / analyze_effect / parse_nl` 四个方法；
 3. 远端不可用时插件自动降级 Mock，不会中断工作流。
+
+### 4.5 安全配置（可选）
+
+本地回环部署默认即可工作；多用户 / 浏览器混合环境可在 `config/runtime_config.json` 收紧策略：
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `auth_token` | `""` | 握手共享口令；非空时客户端须通过子协议或 Bearer 携带一致口令，否则 403 |
+| `allowed_origins` | `[]` | 浏览器连接允许的 Origin 主机名白名单；localhost / 127.0.0.1 / ::1 始终放行 |
+| `max_connections` | `4` | 最大并发 WebSocket 连接数 |
+| `allow_external_import` | `false` | 是否允许打开传输 / 临时目录之外的 `.blend` 工程 |
+| `addon_operator_allowlist` | `[]` | 第三方算子前缀白名单；空列表表示不限前缀 |
+| `addon_operator_denylist` | 内置危险项 | 命中子串即拒绝的算子（工程读写 / 脚本 / 控制台等） |
 
 ## 五、常见环境问题排查
 

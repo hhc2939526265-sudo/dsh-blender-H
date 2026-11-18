@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 import json
 import time
+import threading
 import traceback
 from typing import Any, Dict, List, Optional
 
@@ -44,10 +45,11 @@ class Bridge:
 
         # 子系统初始化
         self.transfer = TransferManager(
-            save_dir=paths.subdir("transfer"),
+            save_dir=config.get("transfer_dir") or paths.subdir("transfer"),
             chunk_size=int(config.get("chunk_size", 64 * 1024)),
             verify_md5=bool(config.get("verify_md5", True)),
             resume_enabled=bool(config.get("resume_enabled", True)),
+            max_total_bytes=int(config.get("max_upload_size_mb", 2048)) * 1024 * 1024,
         )
         self.backup = BackupManager(
             backup_dir=paths.subdir("backup"),
@@ -104,6 +106,9 @@ class Bridge:
             heartbeat_interval=int(self.config.get("heartbeat_interval", 30)),
             heartbeat_timeout=int(self.config.get("heartbeat_timeout", 10)),
             logger=self.logger,
+            auth_token=str(self.config.get("auth_token", "")),
+            allowed_origins=self.config.get("allowed_origins", []) or [],
+            max_connections=int(self.config.get("max_connections", 4)),
         )
         ok = self.ws.start()
         if ok:
@@ -169,6 +174,14 @@ class Bridge:
             self._send_raw(conn_id, protocol.make_result(
                 message["cmd_id"], cmd_type, protocol.STATUS_SUCCESS,
                 result={"cleared": cleared}))
+            return
+        if cmd_type == protocol.CommandType.SHUTDOWN:
+            # 先回执再延迟停止，保证对端收到关闭确认
+            cleared = self.queue.clear()
+            self._send_raw(conn_id, protocol.make_result(
+                message["cmd_id"], cmd_type, protocol.STATUS_SUCCESS,
+                result={"cleared": cleared, "stopping": True}))
+            threading.Timer(0.5, self.stop).start()
             return
         if cmd_type == protocol.CommandType.HANDSHAKE:
             self._conn_id = conn_id

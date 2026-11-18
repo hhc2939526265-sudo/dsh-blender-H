@@ -44,15 +44,17 @@ def _clean_old_logs(log_dir: str, keep_days: int) -> None:
 
 
 def get_logger(name: str = "dsh_bridge", level: str = "INFO",
-               log_dir: str | None = None) -> logging.Logger:
+               log_dir: str | None = None, keep_days: int = 14) -> logging.Logger:
     """
     获取（带缓存的）命名日志器。
 
     :param name: 日志器名称
     :param level: 日志级别字符串
     :param log_dir: 日志目录，为空则不写文件
+    :param keep_days: 历史日志保留天数
     :return: 配置完成的 logging.Logger
     """
+    keep_days = max(1, int(keep_days))
     with _lock:
         if name in _logger_cache:
             return _logger_cache[name]
@@ -72,11 +74,11 @@ def get_logger(name: str = "dsh_bridge", level: str = "INFO",
         # 文件输出（按天滚动）
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-            _clean_old_logs(log_dir, keep_days=14)
+            _clean_old_logs(log_dir, keep_days=keep_days)
             if not any(isinstance(h, TimedRotatingFileHandler) for h in logger.handlers):
                 file_handler = TimedRotatingFileHandler(
                     os.path.join(log_dir, f"{name}.log"),
-                    when="midnight", backupCount=14, encoding="utf-8")
+                    when="midnight", backupCount=keep_days, encoding="utf-8")
                 file_handler.setFormatter(
                     logging.Formatter("%(asctime)s | %(levelname)-7s | %(message)s",
                                       datefmt="%Y-%m-%d %H:%M:%S"))

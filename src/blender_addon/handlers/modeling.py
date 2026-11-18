@@ -138,7 +138,12 @@ def array(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 7. 曲线生成
 # ---------------------------------------------------------------------------
 def curve(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    points: List[List[float]] = payload["points"]
+    points: List[List[float]] = payload.get("points") or []
+    if len(points) < 2:
+        raise ValueError("曲线至少需要 2 个坐标点")
+    for co in points:
+        if not isinstance(co, (list, tuple)) or len(co) < 3:
+            raise ValueError("曲线坐标点至少包含 X / Y / Z 三个分量")
     name = H.unique_name(payload.get("name", "curve"))
     curve_data = bpy.data.curves.new(name=name, type="CURVE")
     curve_data.dimensions = "3D"

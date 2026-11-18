@@ -26,6 +26,41 @@ class BackupManager:
         self.max_slots = max_slots
         self._slots: List[Dict[str, Any]] = []
         os.makedirs(backup_dir, exist_ok=True)
+        # 重启 Blender 后内存槽位丢失，按备份目录回补历史记录
+        self._rescan_slots()
+
+    # ------------------------------------------------------------- 目录回补
+    def _rescan_slots(self) -> None:
+        """扫描备份目录，把历史 JSON 清单回补到内存槽位列表。"""
+        try:
+            names = sorted(os.listdir(self.backup_dir))
+        except OSError:
+            return
+        records: List[Dict[str, Any]] = []
+        for name in names:
+            if not name.startswith("backup_") or not name.endswith(".json"):
+                continue
+            json_path = os.path.join(self.backup_dir, name)
+            # 文件名约定：backup_<slot>_<timestamp>.json
+            parts = name[len("backup_"):-len(".json")].split("_", 1)
+            try:
+                slot_index = int(parts[0])
+                manifest: Dict[str, Any] = {}
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    manifest = json.load(fh)
+            except (OSError, ValueError, IndexError):
+                continue
+            blend_path = json_path[:-len(".json")] + ".blend"
+            records.append({
+                "slot": slot_index,
+                "label": str(manifest.get("label", "restored")),
+                "timestamp": str(manifest.get("timestamp", "")),
+                "blend_path": blend_path if os.path.isfile(blend_path) else "",
+                "json_path": json_path,
+                "object_count": len(manifest.get("objects", [])),
+            })
+        records.sort(key=lambda r: r["timestamp"])
+        self._slots = records[-self.max_slots:]
 
     # ------------------------------------------------------------- 快照
     def snapshot(self, label: str = "auto") -> Dict[str, Any]:
@@ -82,6 +117,9 @@ class BackupManager:
         if not self._slots:
             return {"ok": False, "error": "暂无可用备份"}
 
+        if slot is not None and not (0 <= int(slot) < len(self._slots)):
+            return {"ok": False,
+                    "error": f"备份槽位越界: {slot}（当前共 {len(self._slots)} 个槽位）"}
         record = self._slots[slot] if slot is not None else self._slots[-1]
 
         # 路径回补（重启后槽位记录可能丢失，按目录匹配）

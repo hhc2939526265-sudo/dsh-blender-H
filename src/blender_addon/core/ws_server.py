@@ -21,6 +21,7 @@ import socket
 import struct
 import threading
 import time
+from urllib.parse import urlparse
 from typing import Callable, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
@@ -70,7 +71,9 @@ class WSServer:
                  on_message: Callable[[str, str], None],
                  on_status: Optional[Callable[[str, str], None]] = None,
                  heartbeat_interval: int = 30, heartbeat_timeout: int = 10,
-                 logger=None):
+                 logger=None, auth_token: str = "",
+                 allowed_origins: Optional[List[str]] = None,
+                 max_connections: int = 4):
         self.host = host
         self.port = port
         self._on_message = on_message
@@ -78,6 +81,10 @@ class WSServer:
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_timeout = heartbeat_timeout
         self.log = logger
+        # 安全策略：共享口令 / Origin 白名单 / 并发连接上限
+        self._auth_token = auth_token or ""
+        self._allowed_origins = {o.lower() for o in (allowed_origins or []) if o}
+        self._max_connections = max(1, int(max_connections))
 
         self._sock: Optional[socket.socket] = None
         self._accept_thread: Optional[threading.Thread] = None
@@ -156,35 +163,103 @@ class WSServer:
             self._conns.pop(cid, None)
 
     # ------------------------------------------------------------- 握手
+    @staticmethod
+    def _parse_headers(req: str) -> Dict[str, str]:
+        """把握手请求头解析为小写键名字典。"""
+        headers: Dict[str, str] = {}
+        lines = req.split("\r\n")
+        for line in lines[1:]:
+            if ":" in line:
+                k, v = line.split(":", 1)
+                headers[k.strip().lower()] = v.strip()
+        return headers
+
+    def _check_origin(self, origin: str) -> bool:
+        """校验 Origin 是否为本地回环或在白名单内；无 Origin 头视为桌面客户端放行。"""
+        if not origin:
+            return True
+        host = ""
+        try:
+            host = (urlparse(origin).hostname or "").lower()
+        except ValueError:
+            return False
+        return host in ("localhost", "127.0.0.1", "::1") or host in self._allowed_origins
+
+    def _check_token(self, headers: Dict[str, str]) -> bool:
+        """共享口令校验：支持 Sec-WebSocket-Protocol 末段或 Authorization: Bearer。"""
+        if not self._auth_token:
+            return True
+        token = ""
+        proto = headers.get("sec-websocket-protocol", "")
+        if proto:
+            parts = [p.strip() for p in proto.split(",") if p.strip()]
+            token = parts[-1] if parts else ""
+        authz = headers.get("authorization", "")
+        if authz.lower().startswith("bearer "):
+            token = authz[7:].strip()
+        return token == self._auth_token
+
     def _do_handshake(self, conn: _Connection) -> bool:
-        """完成 HTTP Upgrade 握手，返回是否成功。"""
+        """完成 HTTP Upgrade 握手，返回是否成功；校验不通过回 403 并拒绝。"""
         try:
             req = self._recv_http_headers(conn.sock)
         except (OSError, WebSocketError) as exc:
             self._safe_log("warning", f"握手读取失败: {exc}")
             return False
 
-        key = None
-        for line in req.split("\r\n"):
-            if line.lower().startswith("sec-websocket-key:"):
-                key = line.split(":", 1)[1].strip()
-                break
+        headers = self._parse_headers(req)
+
+        # 并发连接上限
+        with self._conn_lock:
+            if len(self._conns) >= self._max_connections:
+                self._reject(conn, 403, "连接数已达上限")
+                return False
+
+        # Origin / 口令校验（防浏览器跨站 WebSocket 劫持 CSWSH）
+        if not self._check_origin(headers.get("origin", "")):
+            self._safe_log("warning", "握手 Origin 被拒绝: " + headers.get("origin", ""))
+            self._reject(conn, 403, "Origin 不在白名单")
+            return False
+        if not self._check_token(headers):
+            self._safe_log("warning", "握手口令校验失败")
+            self._reject(conn, 403, "握手口令校验失败")
+            return False
+
+        key = headers.get("sec-websocket-key")
         if not key:
+            self._reject(conn, 400, "缺少 Sec-WebSocket-Key")
             return False
 
         accept = base64.b64encode(
             hashlib.sha1((key + _GUID).encode()).digest()).decode()
+        # 客户端携带子协议时回显业务名（末段口令不回显）
+        proto = headers.get("sec-websocket-protocol", "")
+        proto_header = ""
+        if proto:
+            proto_header = "Sec-WebSocket-Protocol: dsh-bridge\r\n"
         response = (
             "HTTP/1.1 101 Switching Protocols\r\n"
             "Upgrade: websocket\r\n"
             "Connection: Upgrade\r\n"
-            f"Sec-WebSocket-Accept: {accept}\r\n\r\n"
+            f"Sec-WebSocket-Accept: {accept}\r\n"
+            f"{proto_header}\r\n"
         )
         try:
             conn.sock.sendall(response.encode())
             return True
         except OSError:
             return False
+
+    def _reject(self, conn: _Connection, status: int, reason: str) -> None:
+        """握手阶段拒绝连接并回送状态行。"""
+        body = reason.encode("utf-8")
+        try:
+            conn.sock.sendall(
+                f"HTTP/1.1 {status} Forbidden\r\n"
+                "Content-Type: text/plain; charset=utf-8\r\n"
+                f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+        except OSError:
+            pass
 
     @staticmethod
     def _recv_http_headers(sock: socket.socket) -> str:

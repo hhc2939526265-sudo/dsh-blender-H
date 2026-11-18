@@ -50,11 +50,17 @@ def _apply_easing(obj: bpy.types.Object, easing: str) -> None:
 def keyframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mode = payload.get("mode", "location")  # location / rotation / scale
-    frames: List[List[Any]] = payload["frames"]
+    if mode not in ("location", "rotation", "scale"):
+        raise ValueError(f"关键帧模式非法: {mode}（location / rotation / scale）")
+    frames: List[List[Any]] = payload.get("frames") or []
+    if not frames:
+        raise ValueError("关键帧序列 frames 不能为空")
     attr = {"location": obj.location, "rotation": obj.rotation_euler,
             "scale": obj.scale}[mode]
 
     for frame, values in frames:
+        if not isinstance(values, (list, tuple)) or len(values) != len(attr):
+            raise ValueError(f"关键帧数值长度与 {mode} 不匹配（应为 {len(attr)} 个分量）")
         for axis, value in enumerate(values):
             attr[axis] = value
         obj.keyframe_insert(data_path=mode, frame=float(frame))
@@ -83,6 +89,8 @@ def rig_auto(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def loop_cycle(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     cycle = payload.get("cycle", "walk")  # walk / run / jump
+    if cycle not in ("walk", "run", "jump"):
+        raise ValueError(f"循环动画类型非法: {cycle}（walk / run / jump）")
     fps = int(payload.get("fps", ctx.config.get("animation_fps", 24)))
     duration = float(payload.get("duration", 1.0))
     end_frame = max(2, int(round(fps * duration)))
@@ -143,7 +151,12 @@ def physics(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def path_constraint(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    points: List[List[float]] = payload["points"]
+    points: List[List[float]] = payload.get("points") or []
+    if len(points) < 2:
+        raise ValueError("路径至少需要 2 个坐标点")
+    for co in points:
+        if not isinstance(co, (list, tuple)) or len(co) < 3:
+            raise ValueError("路径坐标点至少包含 X / Y / Z 三个分量")
     curve_data = bpy.data.curves.new(name=f"{obj.name}_Path", type="CURVE")
     curve_data.dimensions = "3D"
     spline = curve_data.splines.new("POLY")

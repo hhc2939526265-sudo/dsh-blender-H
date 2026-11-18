@@ -341,6 +341,16 @@ def invoke_operator(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     if mode not in ("execute", "invoke"):
         raise ValueError(f"调用模式非法: {mode}（execute / invoke）")
 
+    # 算子安全策略：先过黑名单（危险工程 / 脚本 / 控制台算子一律拒绝），
+    # 再按白名单前缀放行；白名单为空表示不限前缀。
+    lower_id = idname.lower()
+    denylist = [str(item).lower() for item in ctx.config.get("addon_operator_denylist", [])]
+    if any(bad and bad in lower_id for bad in denylist):
+        raise PermissionError(f"算子命中黑名单，禁止调用: {idname}")
+    allowlist = [str(item).lower() for item in ctx.config.get("addon_operator_allowlist", [])]
+    if allowlist and not any(lower_id.startswith(prefix) for prefix in allowlist):
+        raise PermissionError(f"算子不在白名单内: {idname}")
+
     op = _resolve_operator(idname)
     ctx.log("info", f"调用第三方插件算子: {idname}（{mode}）")
     if mode == "invoke":

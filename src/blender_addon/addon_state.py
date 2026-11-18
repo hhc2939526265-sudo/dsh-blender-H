@@ -33,7 +33,8 @@ def init_runtime() -> Dict[str, Any]:
     """加载配置与日志器（插件启用时调用一次）。"""
     cfg = load_config()
     logger = get_logger("dsh_bridge", level=cfg.get("log_level", "INFO"),
-                        log_dir=cfg.get("log_dir"))
+                        log_dir=cfg.get("log_dir"),
+                        keep_days=int(cfg.get("log_keep_days", 14)))
     _state["config"] = cfg
     _state["logger"] = logger
     return cfg

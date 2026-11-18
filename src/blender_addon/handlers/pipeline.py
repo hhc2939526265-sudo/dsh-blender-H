@@ -10,9 +10,11 @@
 
 from __future__ import annotations
 
+import os
 import bpy
 from typing import Any, Dict, List, Optional
 
+from ..utils import paths
 from . import character as Char
 from . import animation as Anim
 from . import effects as Eff
@@ -38,6 +40,8 @@ def character_pipeline(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def video_pipeline(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """视频 → 动作复刻 + 特效还原，对齐当前角色。"""
     video_path: str = payload["video_path"]
+    if not paths.is_within(paths.subdir("transfer"), os.path.abspath(video_path)):
+        raise PermissionError("视频路径越出传输目录，拒绝解析")
     kind: str = payload.get("kind", "both")  # mocap / effect / both
     params = {
         "fps": ctx.config.get("animation_fps", 24),

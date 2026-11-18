@@ -116,6 +116,11 @@ def deform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     spec = payload.get("deform", {})
     amplitude = float(spec.get("amplitude", 0.2))
     timing = spec.get("timing", [0, 24])
+    if not isinstance(timing, (list, tuple)) or len(timing) < 2:
+        raise ValueError("形变时序 timing 至少需要起始 / 结束两个帧号")
+    start_frame, end_frame = float(timing[0]), float(timing[1])
+    if end_frame <= start_frame:
+        raise ValueError("形变时序结束帧必须大于起始帧")
 
     # 晶格变形器 + 关键帧幅度
     lattice = bpy.data.lattices.new(name=f"{target.name}_Lattice")
@@ -126,9 +131,9 @@ def deform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     mod = target.modifiers.new(name="effect_deform", type="LATTICE")
     mod.object = lattice_obj
     # 形变幅度关键帧（0 → amplitude → 0）
-    for frame, scale_k in ((timing[0], 1.0),
-                           (timing[0] + (timing[1] - timing[0]) / 2, 1.0 + amplitude),
-                           (timing[1], 1.0)):
+    for frame, scale_k in ((start_frame, 1.0),
+                           (start_frame + (end_frame - start_frame) / 2, 1.0 + amplitude),
+                           (end_frame, 1.0)):
         lattice_obj.scale = (scale_k, scale_k, scale_k)
         lattice_obj.keyframe_insert(data_path="scale", frame=frame)
     return {"object": target.name, "amplitude": amplitude, "timing": timing}

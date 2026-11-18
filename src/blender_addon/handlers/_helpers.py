@@ -9,13 +9,29 @@ from typing import Any, Dict, List, Optional
 from ..compat import version_compat
 
 
+# 活动对象引用标识：自然语言解析等场景下目标对象未固定命名，统一以 "active" 指代
+ACTIVE_REF = "active"
+
+
+def _is_active_ref(name: str) -> bool:
+    """判断入参是否为活动对象引用（空值 / "active" 均视为当前活动对象）。"""
+    return name is None or str(name).strip().lower() == ACTIVE_REF
+
+
 def get_object(name: str):
-    """按名称取对象，不存在返回 None。"""
+    """按名称取对象；``active`` 解析为当前活动对象，不存在返回 None。"""
+    if _is_active_ref(name):
+        return bpy.context.view_layer.objects.active
     return bpy.data.objects.get(name)
 
 
 def require_object(name: str):
-    """按名称取对象，不存在则抛 KeyError。"""
+    """按名称取对象；``active`` 解析为当前活动对象，不存在则抛 KeyError。"""
+    if _is_active_ref(name):
+        obj = bpy.context.view_layer.objects.active
+        if obj is None:
+            raise KeyError("当前没有活动对象，请先在场景中选中目标对象")
+        return obj
     obj = bpy.data.objects.get(name)
     if obj is None:
         raise KeyError(f"对象不存在: {name}")

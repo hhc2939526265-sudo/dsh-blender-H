@@ -52,12 +52,19 @@ def pbr_generate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     # 可选：贴图通道接入（颜色 / 法线 / 粗糙度 / AO 图片路径）
     nodes = mat.node_tree.nodes
     links = mat.node_tree.links
+    transfer_dir = paths.subdir("transfer")
     for channel, socket_key in (("color_image", "base_color"),
                                 ("normal_image", "normal"),
                                 ("roughness_image", "roughness"),
                                 ("ao_image", "base_color")):
         image_path = payload.get(channel)
-        if not image_path or not os.path.isfile(image_path):
+        if not image_path:
+            continue
+        # 贴图仅允许读取传输缓存目录内的文件，防本地任意图片加载
+        if not paths.is_within(transfer_dir, os.path.abspath(image_path)):
+            ctx.log("warning", f"贴图路径越出传输目录，已忽略: {image_path}")
+            continue
+        if not os.path.isfile(image_path):
             continue
         try:
             image = bpy.data.images.load(image_path, check_existing=True)
@@ -108,7 +115,7 @@ def batch_adjust(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 def preset_save(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    name = payload["name"]
+    name = paths.safe_name(payload["name"])
     obj = H.require_object(payload["object"])
     mat = obj.active_material
     if mat is None:
@@ -131,7 +138,7 @@ def preset_save(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 def preset_load(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    name = payload["name"]
+    name = paths.safe_name(payload["name"])
     preset_path = os.path.join(paths.subdir("presets"), f"{name}.json")
     if not os.path.isfile(preset_path):
         raise FileNotFoundError(f"预设不存在: {name}")

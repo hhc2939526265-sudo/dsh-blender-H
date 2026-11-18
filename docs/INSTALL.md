@@ -1,6 +1,6 @@
 # 安装部署手册
 
-> 适用版本：DSH Blender Bridge 1.1.6　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
+> 适用版本：DSH Blender Bridge 1.1.7　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
 
 ## 一、环境要求
 
@@ -97,6 +97,7 @@
 | `allow_addon_invoke` | `true` | 是否允许桥接调用第三方插件算子 |
 | `allow_addon_enable` | `true` | 是否允许桥接运行时启用第三方插件 |
 | `allow_addon_disable` | `true` | 是否允许桥接运行时禁用第三方插件 |
+| `addon_module_allowlist` | `[]` | 可启停插件模块名前缀白名单；空列表表示不限前缀。不可信对端可连接时建议按模块名收窄，或直接关闭 `allow_addon_enable` / `allow_addon_disable` |
 | `addon_operator_allowlist` | `[]` | 第三方算子前缀白名单；空列表表示不限前缀（仅依赖黑名单兜底）。生产 / 对外开放建议填入 `mesh`、`object`、`armature` 等前缀收窄调用面 |
 | `addon_operator_denylist` | 内置危险项 | 命中子串即拒绝的算子（工程读写 / 脚本 / 控制台等） |
 

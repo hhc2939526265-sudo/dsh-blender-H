@@ -32,7 +32,8 @@ sys.modules["bpy"] = bpy
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from blender_addon.handlers import (_helpers, modeling, animation, effects,
-                                     material, addons)  # noqa: E402
+                                     material, addons, addon_catalog,
+                                     character, export, scene, render)  # noqa: E402
 from blender_addon.core import transfer, dispatcher  # noqa: E402
 from blender_addon.utils import paths  # noqa: E402
 
@@ -170,6 +171,10 @@ class TestTransferGuards(unittest.TestCase):
         res = self.mgr.begin({"file_id": "f1", "chunk_count": 0, "total_size": 10})
         self.assertFalse(res["ok"])
 
+    def test_begin_rejects_zero_size(self):
+        res = self.mgr.begin({"file_id": "f0", "chunk_count": 2, "total_size": 0})
+        self.assertFalse(res["ok"])
+
     def test_begin_rejects_oversize(self):
         res = self.mgr.begin({"file_id": "f1", "chunk_count": 2,
                               "total_size": 1024 * 1024 * 10})
@@ -258,6 +263,20 @@ class TestAddonEcosystemGuards(unittest.TestCase):
         self.assertEqual(res["enabled_count"], 0)
         self.assertTrue(res["policy"]["allow_invoke"])
 
+    def test_enable_module_allowlist_rejected(self):
+        ctx = self._ctx(addon_module_allowlist=["rigify"])
+        with self.assertRaises(PermissionError):
+            addons.enable_addon({"module": "other_pro"}, ctx)
+
+    def test_coerce_node_input_int(self):
+        socket = types.SimpleNamespace(type="INT", name="Count")
+        self.assertEqual(addons._coerce_node_input(socket, "3"), 3)
+
+    def test_coerce_node_input_color_invalid(self):
+        socket = types.SimpleNamespace(type="COLOR", name="Color")
+        with self.assertRaises(ValueError):
+            addons._coerce_node_input(socket, "not-a-color")
+
 
 class TestNewModelingGuards(unittest.TestCase):
 
@@ -310,6 +329,10 @@ class TestRegistry(unittest.TestCase):
         animation.register(d)
         material.register(d)
         effects.register(d)
+        character.register(d)
+        export.register(d)
+        scene.register(d)
+        render.register(d)
         addons.register(d)
         names = set(d.available_commands())
         expected = [
@@ -338,6 +361,11 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len([n for n in names if n.startswith("material.")]), 10)
         self.assertEqual(len([n for n in names if n.startswith("effect.")]), 18)
         self.assertEqual(len([n for n in names if n.startswith("addon.")]), 11)
+        # N3：目录推荐指令必须全部已在分发器注册，避免推荐到失效指令
+        catalog_cmds = {cmd["cmd"] for entry in addon_catalog.KNOWN_PLUGINS
+                         for cmd in entry["bridge_commands"]}
+        for cmd in catalog_cmds:
+            self.assertIn(cmd, names, f"目录推荐指令未注册: {cmd}")
 
 
 class TestFightAnimationGuards(unittest.TestCase):

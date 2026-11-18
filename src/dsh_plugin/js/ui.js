@@ -452,7 +452,7 @@
       this.store.getPresets().forEach((preset) => {
         const card = document.createElement("div");
         card.className = "preset-card";
-        card.innerHTML = `<div class="name">${preset.name}</div><div class="desc">${preset.desc}</div>`;
+        card.innerHTML = `<div class="name">${this._esc(preset.name)}</div><div class="desc">${this._esc(preset.desc)}</div>`;
         card.addEventListener("click", () => this._applyPreset(preset));
         box.appendChild(card);
       });

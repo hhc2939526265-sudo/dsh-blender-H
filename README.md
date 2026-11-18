@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Blender](https://img.shields.io/badge/Blender-4.2%20LTS%20~%205.3-green.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.1.6-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.7-orange.svg)](CHANGELOG.md)
 
 ---
 
@@ -67,9 +67,9 @@ dsh-blender-H/
 git clone https://github.com/hhc2939526265-sudo/dsh-blender-H.git
 ```
 
-1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.6.zip` →
+1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.7.zip` →
    Blender 偏好设置 → 插件 → 从磁盘安装 → 勾选启用 → 侧边栏 `DSH Bridge` 启动服务。
-2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.6.zip` →
+2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.1.7.zip` →
    DSH 插件管理本地安装 → 启用面板。
 3. **连接使用**：两端地址端口保持一致（默认 `127.0.0.1:8765`）→ 点击连接 →
    上传图片 / 视频或输入提示词开始生产。

@@ -2,6 +2,19 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.7] - 2026-11-18
+
+### Fixed
+- **N1**：插件启停新增模块名前缀白名单 `addon_module_allowlist`，`addon.enable` / `addon.disable` 执行前校验；文档同步说明。
+- **N2**：`addon.nodegroup_apply` 覆写输入前按套接字类型做基础转换（INT / FLOAT / BOOLEAN / STRING / VECTOR / COLOR），类型不兼容在执行前抛错。
+- **N3**：注册表测试新增目录推荐指令交叉断言，catalog 内全部 `bridge_commands.cmd` 必须已注册，防止推荐到失效指令。
+- **N4**：`transfer.begin` 拒绝 `total_size <= 0` 的零字节会话；累计字节校验不再跳过 0 大小分支。
+- **N5**：`transfer.py` 顶部统一 `import time`，移除 `__import__("time")` 与函数内局部导入。
+- **N6**：前端预设卡片名称 / 描述统一经 `_esc` 转义后再插入 innerHTML。
+
+### 测试
+- 新增零大小会话拒绝、模块白名单拒绝、节点输入类型转换 / 不兼容用例；目录指令与注册表交叉断言纳入注册测试。共 74 个单元测试全部通过。
+
 ## [1.1.6] - 2026-11-18
 
 ### Added
@@ -109,7 +122,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.7...HEAD
+[1.1.7]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.7
 [1.1.6]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.6
 [1.1.5]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.5
 [1.1.4]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.4

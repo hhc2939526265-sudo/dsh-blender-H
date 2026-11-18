@@ -305,7 +305,8 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 
 **启停与检索**
 
-- `addon.enable` / `addon.disable`：模块名仅允许字母 / 数字 / 下划线 / 点号；桥接自身不可被启停；分别受配置 `allow_addon_enable` / `allow_addon_disable` 控制。
+- `addon.enable` / `addon.disable`：模块名仅允许字母 / 数字 / 下划线 / 点号；桥接自身不可被启停；分别受配置 `allow_addon_enable` / `allow_addon_disable` 控制，并可由 `addon_module_allowlist` 按模块前缀进一步收窄。
+- `addon.nodegroup_apply` 覆写输入时按套接字类型做基础转换（INT / FLOAT / BOOLEAN / STRING / VECTOR / COLOR），类型不兼容在执行前抛错；不做越界数值裁剪，具体范围以节点组定义为准。
 - `addon.operator_search`：返回算子 `idname`、`label`、归属 `prefix`；`addon.status` 回执含 Blender 版本、已启用模块与当前策略开关。
 
 ## 四、多模态数据格式

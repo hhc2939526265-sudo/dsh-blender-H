@@ -187,6 +187,33 @@ def _check_operator_policy(idname: str, ctx) -> None:
         raise PermissionError(f"算子不在白名单内: {idname}")
 
 
+def _check_module_policy(module: str, ctx) -> None:
+    """模块前缀白名单校验：白名单为空表示不限前缀。"""
+    allowlist = [str(item).lower() for item in ctx.config.get("addon_module_allowlist", [])]
+    lower_module = module.lower()
+    if allowlist and not any(lower_module.startswith(prefix) for prefix in allowlist):
+        raise PermissionError(f"插件模块不在白名单内: {module}")
+
+
+def _coerce_node_input(socket, value: Any) -> Any:
+    """按节点输入槽类型做基础类型转换，类型不兼容抛 ValueError。"""
+    socket_type = getattr(socket, "type", "VALUE")
+    try:
+        if socket_type in ("INT", "BOOLEAN"):
+            return bool(value) if socket_type == "BOOLEAN" else int(value)
+        if socket_type in ("FLOAT", "VALUE"):
+            return float(value)
+        if socket_type == "STRING":
+            return str(value)
+        if socket_type in ("VECTOR", "COLOR"):
+            if not isinstance(value, (list, tuple)):
+                raise ValueError("向量 / 颜色输入需为数值数组")
+            return [float(v) for v in value]
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"输入槽 {getattr(socket, 'name', '?')} 类型不兼容: {exc}") from exc
+    return value
+
+
 def _validate_module_name(module: str) -> str:
     """校验插件模块名格式，拒绝路径穿越 / 非法字符。"""
     module = (module or "").strip()
@@ -436,6 +463,7 @@ def enable_addon(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     module = _validate_module_name(payload["module"])
     if _is_self(module, {}):
         raise PermissionError("禁止启停桥接插件自身")
+    _check_module_policy(module, ctx)
     bpy.ops.preferences.addon_enable(module=module)
     ctx.log("info", f"已启用第三方插件: {module}")
     return {"module": module, "enabled": True}
@@ -448,6 +476,7 @@ def disable_addon(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     module = _validate_module_name(payload["module"])
     if _is_self(module, {}):
         raise PermissionError("禁止启停桥接插件自身")
+    _check_module_policy(module, ctx)
     bpy.ops.preferences.addon_disable(module=module)
     ctx.log("info", f"已禁用第三方插件: {module}")
     return {"module": module, "enabled": False}
@@ -533,7 +562,8 @@ def nodegroup_apply(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     applied_inputs: List[str] = []
     for socket_name, value in inputs.items():
         if socket_name in mod.inputs:
-            mod.inputs[socket_name].default_value = value
+            socket = mod.inputs[socket_name]
+            socket.default_value = _coerce_node_input(socket, value)
             applied_inputs.append(socket_name)
     return {"object": obj.name, "node_group": group_name,
             "modifier": mod.name, "inputs": applied_inputs}

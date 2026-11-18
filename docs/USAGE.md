@@ -72,7 +72,8 @@
 10. **几何节点组挂载**：`addon.nodegroup_apply` 把插件 / 资产库导入的节点组挂到对象上，并按名称覆写输入参数。
 11. **安全说明**：所有调用经过算子存在性校验、参数类型白名单过滤、算子前缀白名单与危险算子黑名单校验，
     异常收敛为失败回执，不会拖垮 Blender；可在配置 `allow_addon_invoke` 中关闭第三方算子调用权限，
-    通过 `addon_operator_allowlist` / `addon_operator_denylist` 进一步收窄可调用算子范围。
+    通过 `addon_operator_allowlist` / `addon_operator_denylist` 进一步收窄可调用算子范围；
+    插件启停另受 `addon_module_allowlist` 模块前缀白名单约束。
 
 > 能力识别基于插件 `bl_info` 元信息与关键词归类；如需更深语义理解，可在 AI 适配层接入大模型对描述做二次解析。
 

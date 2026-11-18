@@ -79,6 +79,8 @@ DEFAULT_CONFIG = {
     "allow_addon_invoke": True,         # 是否允许桥接调用第三方插件算子
     "allow_addon_enable": True,         # 是否允许桥接运行时启用第三方插件
     "allow_addon_disable": True,        # 是否允许桥接运行时禁用第三方插件
+    # 可启停插件模块名前缀白名单；空列表表示不限前缀（仅依赖总开关）
+    "addon_module_allowlist": [],
     "addon_max_operators_per_addon": 50,  # 单个插件向上暴露的算子数量上限
     # 算子白名单：条目为算子 ID 前缀（如 "object"、"mesh"）；空列表表示不限前缀
     "addon_operator_allowlist": [],

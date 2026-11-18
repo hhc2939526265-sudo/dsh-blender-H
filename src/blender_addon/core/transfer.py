@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import json
+import time
 import base64
 import hashlib
 import threading
@@ -37,7 +38,7 @@ class TransferSession:
         self.save_dir = save_dir
         self.chunks: Dict[int, bytes] = {}
         self.received_bytes = 0
-        self.created_at = __import__("time").time()
+        self.created_at = time.time()
 
     def missing_indexes(self) -> List[int]:
         """返回尚未收到的分片索引列表。"""
@@ -54,7 +55,7 @@ class TransferSession:
         # 断点续传重复补发同一索引时，先扣减旧分片字节，避免重复计数
         old = self.chunks.get(index)
         new_total = self.received_bytes - (len(old) if old else 0) + len(data)
-        if self.total_size > 0 and new_total > self.total_size:
+        if new_total > self.total_size:
             raise ValueError("累计接收字节超出登记的文件总大小")
         self.chunks[index] = data
         self.received_bytes = new_total
@@ -124,7 +125,9 @@ class TransferManager:
         # 入参合法性校验：分片数与总大小必须为正且不超过上限
         if chunk_count <= 0:
             return {"ok": False, "error": "chunk_count 必须为正整数"}
-        if total_size < 0 or total_size > self.max_total_bytes:
+        if total_size <= 0:
+            return {"ok": False, "error": "total_size 必须为正整数（不支持 0 字节会话）"}
+        if total_size > self.max_total_bytes:
             return {"ok": False,
                     "error": f"文件大小超出上限 {self.max_total_bytes} 字节"}
 
@@ -221,7 +224,6 @@ class TransferManager:
 
     def cleanup_idle(self, max_age_seconds: int) -> int:
         """清理超时未完成的残留会话，返回清理数量。"""
-        import time
         now = time.time()
         with self._lock:
             stale = [fid for fid, s in self._sessions.items()

@@ -20,8 +20,10 @@ rm -f "${SRC_ARCHIVE}"
 cd "${ROOT_DIR}"
 if command -v zip >/dev/null 2>&1; then
   zip -rq "${SRC_ARCHIVE}" . \
-    -x 'packages/*' -x '*/__pycache__/*' -x '*.pyc' \
-    -x '*/transfer_cache/*' -x '*/render_output/*' -x '*/logs/*' -x '*/backups/*'
+    -x '.git/*' -x 'packages/*' -x '*.zip' \
+    -x '*/__pycache__/*' -x '*.pyc' \
+    -x '*/transfer_cache/*' -x '*/render_output/*' -x '*/logs/*' -x '*/backups/*' \
+    -x '*/temp/*' -x '*/presets/*' -x '.DS_Store'
 else
   python3 -c "
 import shutil

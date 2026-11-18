@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import bpy
 
+from . import addon_catalog
+
 # ---------------------------------------------------------------------------
 # 能力分类关键词表（可在配置中扩展，禁止把魔法字符串散落到调用处）
 # ---------------------------------------------------------------------------
@@ -412,7 +414,16 @@ def match_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
             "operators": addon["operators"],
         })
     scored.sort(key=lambda item: item["score"], reverse=True)
-    return {"intent": intent, "matches": scored[:top_n], "count": len(scored)}
+    return {"intent": intent, "matches": scored[:top_n], "count": len(scored),
+            "catalog_hits": addon_catalog.catalog_match(intent, top_n=top_n)}
+
+
+def catalog(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """查询常用插件目录：按能力分类 / 关键词过滤，返回推荐桥接指令。"""
+    capability = payload.get("capability")
+    keyword = payload.get("keyword")
+    plugins = addon_catalog.query_catalog(capability, keyword)
+    return {"total": len(plugins), "plugins": plugins}
 
 
 # ---------------------------------------------------------------------------
@@ -539,3 +550,4 @@ def register(dispatcher) -> None:
     dispatcher.register("addon.operator_search", operator_search, ["keyword"])
     dispatcher.register("addon.operator_batch", operator_batch, ["operator", "objects"])
     dispatcher.register("addon.nodegroup_apply", nodegroup_apply, ["node_group"])
+    dispatcher.register("addon.catalog", catalog)

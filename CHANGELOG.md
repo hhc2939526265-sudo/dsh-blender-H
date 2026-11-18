@@ -2,6 +2,16 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.6] - 2026-11-18
+
+### Added
+- 内置 20 个常用第三方插件目录映射（MPFB2、Jiggle Physics、BagaPie、Sword Trail、Extra Nodes、Simply Cloth、Alt Tab Easy Fog2、Auto-Rig Pro、Faceit、Simply Cloth Studio 2、Hair Pro、Animcraft、Geo-Scatter、RockForms、True Terrain、NeXus、VFX Toolkit、Style Engine、Baker Wrangler、Light Painter），每条目给出能力分类、工作流与推荐桥接指令。
+- 新增 `addon.catalog` 指令：按能力 / 关键词检索目录；`addon.match` 回执补充 `catalog_hits`，已启用列表未命中时返回目录最贴合条目。
+- Mock 自然语言规则补充布料物理 / 软体 / 地形 / 散布 / 烘焙 / 绑定 / 表情 / 岩石 / 风格化关键词映射。
+
+### 测试
+- 新增目录条目完整性、分类 / 关键词检索与意图匹配用例；共 70 个单元测试全部通过。
+
 ## [1.1.5] - 2026-11-18
 
 ### Added
@@ -99,7 +109,8 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.5...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.6...HEAD
+[1.1.6]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.6
 [1.1.5]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.5
 [1.1.4]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.4
 [1.1.3]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.3

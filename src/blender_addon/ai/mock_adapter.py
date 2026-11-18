@@ -271,5 +271,27 @@ class MockAIProvider(BaseAIProvider):
         if "震动" in text or "震屏" in text:
             add("effect.camera_shake", {"amplitude": 0.08, "end_frame": 24})
 
+        # 常用插件概念映射（与内置目录条目对应）
+        if "布料物理" in text or "服装物理" in text or "衣料" in text:
+            add("anim.physics", {"object": "active", "kind": "cloth", "mass": 0.5})
+        if "软体" in text or "抖动" in text or "摆动" in text:
+            add("anim.physics", {"object": "active", "kind": "soft", "mass": 1.0})
+        if "地形" in text or "山地" in text or "地貌" in text:
+            add("mesh.subdivide", {"object": "active", "levels": 2})
+            add("mesh.displace", {"object": "active", "strength": 0.3})
+        if "散布" in text or "植被" in text:
+            add("mesh.batch_generate", {"count": 20, "type": "cube",
+                                        "name_prefix": "scatter"})
+        if "烘焙" in text or "法线贴图" in text or "ao" in text:
+            add("character.uv_bake", {"object": "active"})
+        if "自动绑定" in text or "骨骼绑定" in text:
+            add("anim.rig_auto", {"object": "active"})
+        if "表情" in text or "面部" in text:
+            add("character.shape_keys", {"object": "active"})
+        if "岩石" in text or "岩体" in text:
+            add("mesh.displace", {"object": "active", "strength": 0.25})
+        if "风格化" in text or "卡通" in text:
+            add("material.pbr_generate", {"object": "active", "stylized": True})
+
         return {"prompt": prompt, "commands": commands,
                 "matched_rules": len(commands)}

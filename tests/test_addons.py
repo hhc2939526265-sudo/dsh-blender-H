@@ -12,6 +12,7 @@ sys.modules.setdefault("bpy", types.ModuleType("bpy"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "blender_addon"))
 
 from handlers import addons  # noqa: E402
+from handlers import addon_catalog  # noqa: E402
 
 
 class TestClassify(unittest.TestCase):
@@ -65,6 +66,42 @@ class TestSanitize(unittest.TestCase):
     def test_reject_nested_object(self):
         with self.assertRaises(ValueError):
             addons._sanitize_params({"nested": {"a": 1}})
+
+
+class TestAddonCatalog(unittest.TestCase):
+
+    VALID_CAPS = {"modeling", "rigging", "animation", "effects",
+                  "material", "render", "asset", "io", "other"}
+
+    def test_catalog_entries_well_formed(self):
+        self.assertGreaterEqual(len(addon_catalog.KNOWN_PLUGINS), 20)
+        for entry in addon_catalog.KNOWN_PLUGINS:
+            self.assertIn(entry["capability"], self.VALID_CAPS)
+            self.assertTrue(entry["name"])
+            self.assertTrue(entry["aliases"])
+            self.assertTrue(entry["bridge_commands"])
+            for cmd in entry["bridge_commands"]:
+                self.assertIn("cmd", cmd)
+                self.assertIn("note", cmd)
+
+    def test_query_by_capability(self):
+        rigging = addon_catalog.query_catalog(capability="rigging")
+        names = {e["key"] for e in rigging}
+        self.assertIn("auto_rig_pro", names)
+        self.assertIn("faceit", names)
+
+    def test_query_by_keyword(self):
+        terrain = addon_catalog.query_catalog(keyword="地形")
+        self.assertEqual(len(terrain), 1)
+        self.assertEqual(terrain[0]["key"], "true_terrain")
+
+    def test_catalog_match_rigging_intent(self):
+        hits = addon_catalog.catalog_match("帮我自动绑定骨骼并分配权重")
+        self.assertTrue(hits)
+        self.assertEqual(hits[0]["key"], "auto_rig_pro")
+
+    def test_catalog_match_empty_intent(self):
+        self.assertEqual(addon_catalog.catalog_match(""), [])
 
 
 if __name__ == "__main__":

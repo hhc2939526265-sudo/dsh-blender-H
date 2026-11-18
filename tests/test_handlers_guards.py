@@ -329,7 +329,7 @@ class TestRegistry(unittest.TestCase):
             "effect.spark", "effect.camera_shake",
             "addon.enable", "addon.disable", "addon.status",
             "addon.operator_search", "addon.operator_batch",
-            "addon.nodegroup_apply",
+            "addon.nodegroup_apply", "addon.catalog",
         ]
         for cmd in expected:
             self.assertIn(cmd, names)
@@ -337,7 +337,7 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(len([n for n in names if n.startswith("anim.")]), 17)
         self.assertEqual(len([n for n in names if n.startswith("material.")]), 10)
         self.assertEqual(len([n for n in names if n.startswith("effect.")]), 18)
-        self.assertEqual(len([n for n in names if n.startswith("addon.")]), 10)
+        self.assertEqual(len([n for n in names if n.startswith("addon.")]), 11)
 
 
 class TestFightAnimationGuards(unittest.TestCase):

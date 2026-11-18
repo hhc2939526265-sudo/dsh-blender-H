@@ -231,6 +231,7 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | addon.operator_search | 跨全部已注册算子按关键词检索（ID / 标签） | `keyword`, 可选 `top_n` |
 | addon.operator_batch | 对一批对象依次套用同一算子，逐个隔离异常回执 | `operator`, `objects`, 可选 `params` / `per_object` |
 | addon.nodegroup_apply | 把已有几何节点组挂到对象上，可覆写输入 | `node_group`, 可选 `object` / `inputs` |
+| addon.catalog | 查询常用插件目录（能力分类 / 别名 / 推荐桥接指令） | 可选 `capability` / `keyword` |
 
 **addon.list 回执 result**
 
@@ -291,6 +292,16 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 ```
 
 - 几何节点组需已存在于 `bpy.data.node_groups`（由已启用插件或资产库导入）；`inputs` 按节点组输入套接字名称覆写默认值。
+
+**addon.catalog payload**
+
+```json
+{ "capability": "effects", "keyword": "布料" }
+```
+
+- 目录内置 20 个常用插件映射（MPFB2、Jiggle Physics、BagaPie、Sword Trail、Extra Nodes、Simply Cloth、Easy Fog2、Auto-Rig Pro、Faceit、Simply Cloth Studio 2、Hair Pro、Animcraft、Geo-Scatter、RockForms、True Terrain、NeXus、VFX Toolkit、Style Engine、Baker Wrangler、Light Painter）；
+- 每条目返回 `capability / category / workflow / bridge_commands / notes`；`bridge_commands` 是本桥接内推荐走的内置指令，插件真实算子 ID 仍以真机 `addon.detail` / `addon.operator_search` 为准；
+- `addon.match` 回执额外带 `catalog_hits`：未在已启用插件中命中时，从目录返回最贴合的插件条目作为提示。
 
 **启停与检索**
 

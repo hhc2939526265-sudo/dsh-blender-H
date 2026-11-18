@@ -32,7 +32,7 @@
 ## 仓库导航
 
 ```
-dsh-blender-bridge/
+dsh-blender-H/
 ├── src/
 │   ├── dsh_plugin/            # DSH 插件前端（manifest / HTML / CSS / JS，无第三方依赖）
 │   └── blender_addon/         # Blender Addon（Python，4.2 LTS ~ 5.3）

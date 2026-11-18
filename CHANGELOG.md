@@ -23,5 +23,5 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/your-org/dsh-blender-bridge/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/your-org/dsh-blender-bridge/releases/tag/v1.0.0
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.0.0

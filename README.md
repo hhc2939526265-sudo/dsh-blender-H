@@ -61,6 +61,10 @@ dsh-blender-bridge/
 
 ## 快速开始（三步）
 
+```bash
+git clone https://github.com/hhc2939526265-sudo/dsh-blender-H.git
+```
+
 1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.0.0.zip` →
    Blender 偏好设置 → 插件 → 从磁盘安装 → 勾选启用 → 侧边栏 `DSH Bridge` 启动服务。
 2. **安装 DSH 插件**：Release 下载 `DSH_Blender_Bridge_Plugin_v1.0.0.zip` →

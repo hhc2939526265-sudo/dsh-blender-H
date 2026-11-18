@@ -31,7 +31,7 @@ from ..utils import paths
 from ..utils.backup import BackupManager
 from ..handlers import (
     modeling, character, animation, effects, material,
-    render, scene, export, nl, pipeline,
+    render, scene, export, nl, pipeline, addons,
 )
 
 
@@ -80,6 +80,7 @@ class Bridge:
         export.register(self.dispatcher)
         nl.register(self.dispatcher)
         pipeline.register(self.dispatcher)
+        addons.register(self.dispatcher)
 
         # 系统 / 传输类指令直接在主控层处理，不进入主线程业务队列
         self.dispatcher.register(protocol.CommandType.TRANSFER_BEGIN,

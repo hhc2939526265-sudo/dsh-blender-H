@@ -15,6 +15,8 @@
       this.transfer = app.transfer;
       this.pendingImages = [];
       this.pendingVideo = [];
+      this.addonCache = [];
+      this.selectedModule = null;
     }
 
     init() {
@@ -38,6 +40,7 @@
           document.querySelectorAll(".tab-pane").forEach((p) => p.classList.remove("active"));
           tab.classList.add("active");
           document.querySelector(`.tab-pane[data-pane="${tab.dataset.tab}"]`).classList.add("active");
+          if (tab.dataset.tab === "addons") this._loadAddons();
         });
       });
     }
@@ -167,6 +170,9 @@
         this.client.emit("system.stop", {});
         this.store.addLog("WARNING", "已向 Blender 发送停止指令");
       });
+      $("btn-addon-refresh").addEventListener("click", () => this._loadAddons());
+      $("btn-addon-match").addEventListener("click", () => this._matchAddons());
+      $("btn-addon-invoke").addEventListener("click", () => this._invokeOperator());
       $("btn-export-log").addEventListener("click", () => this._exportLog());
       $("btn-clear-log").addEventListener("click", () => { this.store.clearLogs(); this._renderLogs(); });
       $("log-filter").addEventListener("change", () => this._renderLogs());
@@ -256,6 +262,137 @@
       } catch (e) {
         this.store.addLog("ERROR", `回传失败: ${e.message}`);
       }
+    }
+
+    // ------------------------------------------------------- 插件生态
+    async _loadAddons() {
+      if (!this._ensureConnected()) return;
+      try {
+        const res = await this.client.send("addon.list", {});
+        this.addonCache = res.addons || [];
+        this._renderAddonList();
+        this.store.addLog("INFO", `识别到 ${this.addonCache.length} 个已启用第三方插件`);
+      } catch (e) {
+        this.store.addLog("ERROR", `插件列表获取失败: ${e.message}`);
+      }
+    }
+
+    _renderAddonList() {
+      const box = $("addon-list");
+      box.innerHTML = "";
+      if (!this.addonCache.length) {
+        box.innerHTML = '<div class="placeholder">未检测到第三方插件（需先在 Blender 偏好设置中启用）</div>';
+        return;
+      }
+      this.addonCache.forEach((addon) => {
+        const card = document.createElement("div");
+        card.className = "addon-card" + (addon.module === this.selectedModule ? " active" : "");
+        card.innerHTML = `<div class="name">${this._esc(addon.name)}</div>
+          <div class="desc">${this._esc(addon.description || "—")}</div>
+          <div class="meta">
+            <span class="tag">${this._esc(addon.capability)}</span>
+            <span class="placeholder">${addon.version ? "v" + this._esc(addon.version) : ""} · ${addon.operator_count} 个算子</span>
+          </div>`;
+        card.addEventListener("click", () => this._selectAddon(addon.module));
+        box.appendChild(card);
+      });
+    }
+
+    async _selectAddon(module) {
+      if (!this._ensureConnected()) return;
+      this.selectedModule = module;
+      this._renderAddonList();
+      try {
+        const detail = await this.client.send("addon.detail", { module });
+        this._renderDetail(detail);
+      } catch (e) {
+        this.store.addLog("ERROR", `插件详情获取失败: ${e.message}`);
+      }
+    }
+
+    _renderDetail(detail) {
+      $("addon-detail-meta").textContent =
+        `${detail.name} · ${detail.author || ""} ${detail.version ? "v" + detail.version : ""}\n` +
+        `分类: ${detail.category || "-"} · 能力: ${detail.capability}\n${detail.description || ""}`;
+      const opBox = $("addon-operator-list");
+      opBox.innerHTML = "";
+      const datalist = $("addon-op-candidates");
+      datalist.innerHTML = "";
+      const ops = detail.operators || [];
+      if (!ops.length) {
+        opBox.innerHTML = '<div class="placeholder">该插件暂无可暴露的算子</div>';
+        return;
+      }
+      ops.forEach((op) => {
+        const opt = document.createElement("option");
+        opt.value = op.idname;
+        datalist.appendChild(opt);
+        const props = (op.properties || [])
+          .map((p) => `${p.name}${p.required ? "*" : ""}:${p.type}`).join(", ");
+        const item = document.createElement("div");
+        item.className = "op-item";
+        item.innerHTML = `<div class="op-title"><span>${this._esc(op.label)}</span><span class="op-id">${this._esc(op.idname)}</span></div>
+          <div class="op-props">${props || "无参数"}</div>`;
+        item.addEventListener("click", () => {
+          $("addon-op-id").value = op.idname;
+          $("addon-invoke-result").textContent = `已选中算子 ${op.idname}，可补充参数后调用`;
+        });
+        opBox.appendChild(item);
+      });
+    }
+
+    async _matchAddons() {
+      if (!this._ensureConnected()) return;
+      const intent = $("addon-match-prompt").value.trim();
+      if (!intent) { this.store.addLog("WARNING", "请输入要匹配的意图"); return; }
+      try {
+        const res = await this.client.send("addon.match", { intent, top_n: 5 });
+        const box = $("addon-match-list");
+        box.innerHTML = "";
+        if (!res.matches || !res.matches.length) {
+          box.innerHTML = '<div class="placeholder">未匹配到相关插件</div>';
+          return;
+        }
+        res.matches.forEach((m) => {
+          const card = document.createElement("div");
+          card.className = "addon-card";
+          card.innerHTML = `<div class="name">${this._esc(m.name)}</div>
+            <div class="desc">${this._esc(m.description || "—")}</div>
+            <div class="meta"><span class="tag">${this._esc(m.capability)}</span>
+            <span class="placeholder">命中 ${m.score} 词 · ${(m.matched || []).join("/")}</span></div>`;
+          card.addEventListener("click", () => this._selectAddon(m.module));
+          box.appendChild(card);
+        });
+      } catch (e) {
+        this.store.addLog("ERROR", `插件匹配失败: ${e.message}`);
+      }
+    }
+
+    async _invokeOperator() {
+      if (!this._ensureConnected()) return;
+      const operator = $("addon-op-id").value.trim();
+      if (!operator) { this.store.addLog("WARNING", "请先选择或填写算子 ID"); return; }
+      let params = {};
+      const raw = $("addon-op-params").value.trim();
+      if (raw) {
+        try { params = JSON.parse(raw); }
+        catch (e) { this.store.addLog("ERROR", "参数 JSON 解析失败: " + e.message); return; }
+      }
+      const mode = $("addon-op-mode").value;
+      try {
+        const res = await this.client.send("addon.invoke", { operator, params, mode });
+        $("addon-invoke-result").textContent = JSON.stringify(res, null, 2);
+        this._recordHistory("addon.invoke", res);
+        this.store.addLog("INFO", `算子调用成功: ${operator}`);
+      } catch (e) {
+        $("addon-invoke-result").textContent = `错误: ${e.message}`;
+        this.store.addLog("ERROR", `算子调用失败: ${e.message}`);
+      }
+    }
+
+    _esc(text) {
+      return String(text == null ? "" : text).replace(/[&<>"']/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
     _ensureConnected() {

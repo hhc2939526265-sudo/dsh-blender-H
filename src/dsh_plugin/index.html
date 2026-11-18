@@ -43,6 +43,7 @@
       <button class="tab" data-tab="motion">视频动画 / 特效</button>
       <button class="tab" data-tab="nl">自然语言</button>
       <button class="tab" data-tab="material">材质渲染</button>
+      <button class="tab" data-tab="addons">插件生态</button>
       <button class="tab" data-tab="history">历史预设</button>
       <button class="tab" data-tab="logs">日志</button>
     </nav>
@@ -161,6 +162,46 @@
               <span class="placeholder">成品图 / 视频将在此预览</span>
             </div>
             <div class="result-meta" id="render-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 第三方插件生态 -->
+      <section class="tab-pane" data-pane="addons">
+        <div class="grid two-col">
+          <div class="panel">
+            <h3>意图匹配插件</h3>
+            <textarea id="addon-match-prompt" rows="2"
+              placeholder="例如：自动给角色绑定骨骼并分配权重 / 生成火焰粒子特效"></textarea>
+            <div class="row">
+              <button class="btn btn-primary" id="btn-addon-match">匹配插件</button>
+              <button class="btn btn-ghost" id="btn-addon-refresh">刷新插件列表</button>
+            </div>
+            <div class="addon-list" id="addon-match-list"></div>
+            <h3 style="margin-top:14px">已启用插件</h3>
+            <div class="addon-list" id="addon-list"></div>
+          </div>
+          <div class="panel">
+            <h3>插件详情 / 算子调用</h3>
+            <div class="result-meta" id="addon-detail-meta">未选择插件</div>
+            <div class="operator-list" id="addon-operator-list"></div>
+            <div class="row">
+              <label>算子 ID
+                <input type="text" id="addon-op-id" list="addon-op-candidates" placeholder="namespace.operator" style="width:220px" />
+                <datalist id="addon-op-candidates"></datalist>
+              </label>
+              <label>调用模式
+                <select id="addon-op-mode">
+                  <option value="execute">直接执行</option>
+                  <option value="invoke">交互面板</option>
+                </select>
+              </label>
+            </div>
+            <textarea id="addon-op-params" rows="4" placeholder='参数 JSON，例如 {"count": 3, "use_mirror": true}'></textarea>
+            <div class="row">
+              <button class="btn btn-primary" id="btn-addon-invoke">调用算子</button>
+            </div>
+            <pre class="code-block" id="addon-invoke-result">等待调用…</pre>
           </div>
         </div>
       </section>

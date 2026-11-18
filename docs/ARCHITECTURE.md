@@ -17,7 +17,7 @@
 │  调度层  core/queue.py（主线程队列、串行 / 并行批次） core/dispatcher.py（注册/校验/兜底）│
 │  传输层  core/transfer.py（会话、分片合并、MD5 校验、出站切分）                  │
 │  解析层  ai/（base 抽象 / mock 兜底 / http 远端 / registry 降级）                │
-│  执行层  handlers/（modeling character animation effects material render scene export nl pipeline）│
+│  执行层  handlers/（modeling character animation effects material render scene export nl pipeline addons）│
 │  适配层  compat/（4.2 ~ 5.3 API 差异隔离）                                      │
 │  工具层  utils/（logger 分级滚动、backup 环形槽位、paths 跨平台、内存/临时清理）   │
 │  UI 层   operators.py / panel.py（侧边栏面板与操作符）                          │
@@ -55,6 +55,7 @@ DSH client.send(cmd_type, payload)
 | 内存溢出 | 批量操作分批（batch_size）、闲置临时文件清理 |
 | 版本 API 差异 | compat 层集中映射，低版本静默降级 |
 | 配置丢失 | 默认配置 + 用户配置合并，损坏回退默认值 |
+| 第三方算子误调用 | 算子存在性校验、参数类型白名单过滤、顶层异常兜底、`allow_addon_invoke` 总开关 |
 
 ## 五、数据持久化
 
@@ -71,4 +72,5 @@ DSH client.send(cmd_type, payload)
 - 新指令：处理器 + 注册 + 协议常量，三处即可挂载；
 - 新 AI 后端：继承抽象基类并注册；
 - 新渲染通道 / 贴图类型：在 material 处理器节点树中扩展；
-- 新导出格式：在 export 层增加算子调用并复用出站分片回传。
+- 新导出格式：在 export 层增加算子调用并复用出站分片回传；
+- 第三方插件生态：`handlers/addons.py` 枚举已启用 Addon，按关键词表归类能力；新增能力分类只需扩展 `CAPABILITY_KEYWORDS`；算子发现基于 `bpy.types.Operator` 子类遍历与 ID 前缀归属，通用调用入口复用 dispatcher 异常兜底。

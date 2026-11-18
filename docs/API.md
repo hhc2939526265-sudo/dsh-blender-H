@@ -172,6 +172,52 @@ Blender 主动推送同构三阶段消息：`transfer.begin`（含 meta）→ �
 | pipeline.video | 视频 → 动作 + 特效流水线 |
 | pipeline.iterate | 资产回传进入下一轮迭代 |
 
+### 3.8 第三方插件生态（4 种）
+
+识别并调用 Blender 中已启用的第三方 Addon：读取插件元信息、按关键词归类能力、
+发现其注册的算子（Operator），并通过通用入口安全调用。
+
+| cmd_type | 说明 | 必填参数 |
+|---|---|---|
+| addon.list | 枚举全部已启用第三方插件，返回元信息、能力分类与算子数量 | - |
+| addon.detail | 查询单个插件的完整元信息与算子参数定义 | `module` |
+| addon.invoke | 通用算子调用入口 | `operator`（`namespace.operator`） |
+| addon.match | 按自然语言意图匹配最贴合的插件 | `intent` |
+
+**addon.list 回执 result**
+
+```json
+{
+  "total": 3,
+  "capabilities": { "rigging": ["rigify_pro"], "effects": ["fire_helper"] },
+  "addons": [{
+    "module": "rigify_pro",
+    "name": "Rigify Pro",
+    "author": "Author",
+    "version": "1.2.0",
+    "category": "Rigging",
+    "capability": "rigging",
+    "description": "自动骨骼绑定与权重",
+    "operator_count": 6
+  }]
+}
+```
+
+**addon.invoke payload**
+
+```json
+{
+  "operator": "rigify_pro.generate_rig",
+  "params": { "target": "Character", "use_mirror": true },
+  "mode": "execute"
+}
+```
+
+- `mode`：`execute`（直接执行，默认）/ `invoke`（弹出算子交互面板 `INVOKE_DEFAULT`）；
+- `params` 仅允许 JSON 原始类型（字符串 / 整数 / 浮点 / 布尔 / 原始类型数组），嵌套对象会被拒绝；
+- 能力分类取值：`modeling / rigging / animation / effects / material / render / asset / io / other`；
+- 调用开关：配置 `allow_addon_invoke=false` 时禁止调用第三方算子；单插件算子暴露上限 `addon_max_operators_per_addon`。
+
 ## 四、多模态数据格式
 
 ### 4.1 角色规格（AI → Blender）

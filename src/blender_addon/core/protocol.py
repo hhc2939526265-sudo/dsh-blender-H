@@ -134,6 +134,12 @@ class CommandType:
     PIPELINE_VIDEO = "pipeline.video"
     PIPELINE_ITERATE = "pipeline.iterate"
 
+    # 第三方插件生态：识别 / 详情 / 调用 / 意图匹配
+    ADDON_LIST = "addon.list"
+    ADDON_DETAIL = "addon.detail"
+    ADDON_INVOKE = "addon.invoke"
+    ADDON_MATCH = "addon.match"
+
 
 # ---------------------------------------------------------------------------
 # 信封构造与校验

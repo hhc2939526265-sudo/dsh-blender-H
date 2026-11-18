@@ -62,6 +62,10 @@ DEFAULT_CONFIG = {
     # ---- 内存管理 ----
     "batch_size": 32,                  # 批量操作分批大小
     "idle_release_seconds": 300,       # 闲置多久后释放临时缓存
+
+    # ---- 第三方插件生态 ----
+    "allow_addon_invoke": True,         # 是否允许桥接调用第三方插件算子
+    "addon_max_operators_per_addon": 50,  # 单个插件向上暴露的算子数量上限
 }
 
 

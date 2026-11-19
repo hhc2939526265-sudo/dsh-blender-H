@@ -1,0 +1,6 @@
+# dsh-blender-bridge bundle patch
+# Host 工具（blender_status / blender_commands / blender_exec）+ 输入框状态胶囊。
+# name 必须是实际包名，否则 cordis 按 name import 会报 Cannot find package。
+- insert:
+    - id: dsh-blender-bridge
+      name: dsh-blender-bridge

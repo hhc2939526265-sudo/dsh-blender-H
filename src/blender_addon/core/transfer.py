@@ -20,6 +20,7 @@ import os
 import json
 import time
 import base64
+import binascii
 import hashlib
 import threading
 from typing import Any, Dict, List, Optional
@@ -116,11 +117,18 @@ class TransferManager:
 
         :return: ack 结果，含 missing 分片索引与是否续传
         """
-        file_id = payload["file_id"]
+        file_id = payload.get("file_id")
+        if not isinstance(file_id, str) or not file_id:
+            return {"ok": False, "error": "file_id 需为非空字符串"}
         filename = payload.get("filename", f"{file_id}.bin")
-        total_size = int(payload.get("total_size", 0))
+        if not isinstance(filename, str):
+            return {"ok": False, "error": "filename 需为字符串"}
+        try:
+            total_size = int(payload.get("total_size", 0))
+            chunk_count = int(payload.get("chunk_count", 0))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "total_size / chunk_count 需为整数"}
         md5 = str(payload.get("md5", "")).lower()
-        chunk_count = int(payload.get("chunk_count", 0))
 
         # 入参合法性校验：分片数与总大小必须为正且不超过上限
         if chunk_count <= 0:
@@ -130,14 +138,23 @@ class TransferManager:
         if total_size > self.max_total_bytes:
             return {"ok": False,
                     "error": f"文件大小超出上限 {self.max_total_bytes} 字节"}
+        if self.verify_md5 and not md5:
+            # 开启校验却没有 md5，等于关掉完整性校验：直接拒绝，而不是静默跳过
+            return {"ok": False, "error": "md5 必须提供（verify_md5 已开启）"}
 
         with self._lock:
             existing = self._sessions.get(file_id)
             if existing is not None and self.resume_enabled:
-                missing = existing.missing_indexes()
-                return {"file_id": file_id, "resumed": True,
-                        "missing": missing, "received": len(existing.chunks),
-                        "chunk_count": chunk_count}
+                # 只有元信息一致才允许续传，否则同 id 换文件会错乱
+                consistent = (existing.total_size == total_size
+                              and existing.chunk_count == chunk_count
+                              and (not md5 or not existing.md5 or existing.md5 == md5))
+                if consistent:
+                    missing = existing.missing_indexes()
+                    return {"file_id": file_id, "resumed": True,
+                            "missing": missing, "received": len(existing.chunks),
+                            "chunk_count": existing.chunk_count}
+                self._sessions.pop(file_id, None)
 
             session = TransferSession(file_id, filename, total_size, md5,
                                        chunk_count, self.save_dir)
@@ -148,9 +165,16 @@ class TransferManager:
 
     def add_chunk(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """接收一个分片。"""
-        file_id = payload["file_id"]
-        index = int(payload["index"])
-        data = base64.b64decode(payload.get("data", ""))
+        file_id = payload.get("file_id")
+        if not isinstance(file_id, str) or not file_id:
+            return {"file_id": "", "ok": False, "error": "file_id 需为非空字符串"}
+        try:
+            index = int(payload.get("index"))
+        except (TypeError, ValueError):
+            return {"file_id": file_id, "ok": False, "error": "index 需为整数"}
+        raw = payload.get("data", "")
+        if not isinstance(raw, str):
+            return {"file_id": file_id, "ok": False, "error": "data 需为 base64 字符串"}
         with self._lock:
             session = self._sessions.get(file_id)
             if session is None:
@@ -159,6 +183,17 @@ class TransferManager:
             if not (0 <= index < session.chunk_count):
                 return {"file_id": file_id, "ok": False,
                         "error": f"分片索引越界: {index}（0~{session.chunk_count - 1}）"}
+        # 先校验索引再解码：越界/无效数据不该先吃掉一次 base64 解码的内存
+        try:
+            data = base64.b64decode(raw.strip(), validate=True)
+        except (binascii.Error, ValueError):
+            return {"file_id": file_id, "ok": False,
+                    "error": "data 不是合法的 base64 编码"}
+        with self._lock:
+            session = self._sessions.get(file_id)
+            if session is None:
+                return {"file_id": file_id, "ok": False,
+                        "error": "会话不存在，请先 begin"}
             try:
                 session.add_chunk(index, data, self.chunk_size)
             except ValueError as exc:
@@ -172,18 +207,24 @@ class TransferManager:
 
     def finish(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """合并分片并校验 MD5。"""
-        file_id = payload["file_id"]
+        file_id = payload.get("file_id")
+        if not isinstance(file_id, str) or not file_id:
+            return {"ok": False, "error": "file_id 需为非空字符串"}
         with self._lock:
             session = self._sessions.get(file_id)
             if session is None:
                 return {"ok": False, "error": "会话不存在"}
+            if self.verify_md5 and not session.md5:
+                # 先拒绝再合并，避免把无校验产物落到磁盘
+                self._sessions.pop(file_id, None)
+                return {"ok": False, "error": "会话缺少 md5，拒绝落盘（verify_md5 已开启）"}
             if not session.is_complete():
                 return {"ok": False, "error": "分片不完整",
                         "missing": session.missing_indexes()}
             final_path = session.merge()
 
         # MD5 校验（在锁外做 IO，避免长时间持锁）
-        if self.verify_md5 and session.md5:
+        if self.verify_md5:
             actual = md5_of_file(final_path)
             if actual != session.md5:
                 os.remove(final_path)

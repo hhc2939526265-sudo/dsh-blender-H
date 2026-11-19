@@ -20,7 +20,7 @@ import bpy
 bl_info = {
     "name": "DSH Blender Bridge",
     "author": "DSH-Blender Bridge Contributors",
-    "version": (1, 1, 7),
+    "version": (1, 1, 8),
     "blender": (4, 2, 0),
     "location": "3D View > Sidebar > DSH Bridge",
     "description": "DSH 与 Blender 双向实时桥接：多模态输入 → AI 解析 → 3D 生产 → 迭代 → 渲染交付",
@@ -28,7 +28,7 @@ bl_info = {
     "support": "COMMUNITY",
 }
 
-ADDON_VERSION = "1.1.7"
+ADDON_VERSION = "1.1.8"
 
 
 def register() -> None:
@@ -43,8 +43,25 @@ def register() -> None:
     panel.register()
 
     # 3) 面板属性回填配置
-    for scene in bpy.data.scenes:
-        scene.dsh_bridge.sync_from_config()
+    #    注意：插件 register() 阶段 bpy.data 处于 _RestrictData 受限状态，
+    #    直接遍历 bpy.data.scenes 会抛 AttributeError，因此先尝试、失败则延迟到定时器。
+    def _sync_panels():
+        try:
+            for scene in bpy.data.scenes:
+                if hasattr(scene, "dsh_bridge"):
+                    scene.dsh_bridge.sync_from_config()
+        except Exception:  # noqa: BLE001
+            pass
+        return None  # 只执行一次
+
+    try:
+        _sync_panels()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        bpy.app.timers.register(_sync_panels, first_interval=0.2)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def unregister() -> None:

@@ -26,8 +26,9 @@ from . import protocol
 from .ws_server import WSServer
 from .transfer import TransferManager
 from .dispatcher import Dispatcher
-from .queue import CommandQueue
+from .queue import CommandQueue, QueueFullError
 from ..ai.registry import ProviderRegistry
+from ..config.default_config import get_default
 from ..utils import paths
 from ..utils.backup import BackupManager
 from ..handlers import (
@@ -61,6 +62,7 @@ class Bridge:
             mode=config.get("queue_mode", "serial"),
             max_parallel=int(config.get("max_parallel", 2)),
             command_timeout=float(config.get("command_timeout", 120)),
+            max_pending=int(config.get("max_pending_commands", 256)),
         )
 
         self.ws: Optional[WSServer] = None
@@ -108,8 +110,14 @@ class Bridge:
             heartbeat_timeout=int(self.config.get("heartbeat_timeout", 10)),
             logger=self.logger,
             auth_token=str(self.config.get("auth_token", "")),
-            allowed_origins=self.config.get("allowed_origins", []) or [],
+            # 空列表按默认值处理：老版本写下的 [] 会让 DSH 桌面应用
+            # （Origin: dsh-app://app）永远握手失败，指示灯一直是离线
+            allowed_origins=(self.config.get("allowed_origins")
+                             or get_default("allowed_origins")),
             max_connections=int(self.config.get("max_connections", 4)),
+            handshake_timeout=float(self.config.get("handshake_timeout", 5.0)),
+            max_message_bytes=int(self.config.get("max_message_size_mb", 8))
+            * 1024 * 1024,
         )
         ok = self.ws.start()
         if ok:
@@ -195,7 +203,15 @@ class Bridge:
 
         # 其余指令进入主线程队列
         self._conn_id = conn_id
-        self.queue.enqueue(conn_id, message)
+        try:
+            self.queue.enqueue(conn_id, message)
+        except QueueFullError as exc:
+            # 队列过载：立即回错误，别让对端干等超时
+            self._stats["failed"] += 1
+            self._send_raw(conn_id, protocol.make_result(
+                message["cmd_id"], cmd_type, protocol.STATUS_FAILED,
+                error={"code": "E_BUSY", "message": str(exc)}))
+            return
         self._stats["total"] += 1
 
     # ------------------------------------------------------------- 主线程节拍
@@ -206,6 +222,13 @@ class Bridge:
         :return: 定时器下次触发间隔（秒），返回负数可停止定时器
         """
         items = self.queue.drain()
+        # 排队超时被丢弃的指令必须回包，否则 DSH 端只能干等到自己超时
+        for conn_id, message in self.queue.take_dropped():
+            self._send_raw(conn_id, protocol.make_result(
+                message.get("cmd_id", ""), message.get("cmd_type", ""),
+                protocol.STATUS_FAILED,
+                error={"code": "E_TIMEOUT",
+                       "message": "指令排队超时，已被丢弃"}))
         for conn_id, message in items:
             self._execute_one(conn_id, message)
         return 0.1  # 100ms 节拍

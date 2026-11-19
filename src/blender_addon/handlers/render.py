@@ -16,13 +16,15 @@ from typing import Any, Dict
 
 from ..compat import version_compat
 from ..utils import paths
+from ..utils.errors import (as_float, as_int, get_bool, get_int, get_str,
+                            require_list)
 from . import _helpers as H
 
 
 def _safe_output_dir(payload: Dict[str, Any], ctx=None) -> str:
     """把渲染输出目录收敛到渲染目录下，拒绝逃逸到其他磁盘目录。"""
     base = (ctx.config.get("render_output_dir") if ctx else None) or paths.subdir("render")
-    raw = payload.get("output_path")
+    raw = get_str(payload, "output_path")
     if not raw:
         return base
     path = os.path.abspath(raw) if os.path.isabs(raw) else os.path.join(base, raw)
@@ -30,7 +32,7 @@ def _safe_output_dir(payload: Dict[str, Any], ctx=None) -> str:
 
 
 def switch_engine(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    engine = version_compat.engine_id(payload.get("engine", "EEVEE"))
+    engine = version_compat.engine_id(get_str(payload, "engine", "EEVEE"))
     bpy.context.scene.render.engine = engine
     return {"engine": engine, "version": version_compat.version_text()}
 
@@ -38,11 +40,13 @@ def switch_engine(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def settings(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     scene = bpy.context.scene
     if "resolution" in payload:
-        scene.render.resolution_x = int(payload["resolution"][0])
-        scene.render.resolution_y = int(payload["resolution"][1])
+        resolution = require_list(payload["resolution"], "resolution", min_len=2)
+        scene.render.resolution_x = as_int(resolution[0], "resolution[0]")
+        scene.render.resolution_y = as_int(resolution[1], "resolution[1]")
     if "resolution_percentage" in payload:
-        scene.render.resolution_percentage = int(payload["resolution_percentage"])
-    samples = int(payload.get("samples", 0))
+        scene.render.resolution_percentage = as_int(
+            payload["resolution_percentage"], "resolution_percentage")
+    samples = get_int(payload, "samples", 0)
     if samples:
         if scene.render.engine == "CYCLES":
             scene.cycles.samples = samples
@@ -51,9 +55,9 @@ def settings(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
             if hasattr(scene.eevee, "taa_render_samples"):
                 scene.eevee.taa_render_samples = samples
     if "frame_start" in payload:
-        scene.frame_start = int(payload["frame_start"])
+        scene.frame_start = as_int(payload["frame_start"], "frame_start")
     if "frame_end" in payload:
-        scene.frame_end = int(payload["frame_end"])
+        scene.frame_end = as_int(payload["frame_end"], "frame_end")
     if "output_path" in payload:
         scene.render.filepath = _safe_output_dir(payload, ctx)
     current_samples = scene.cycles.samples if scene.render.engine == "CYCLES" \
@@ -69,7 +73,7 @@ def execute(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     out_dir = _safe_output_dir(payload, ctx)
     os.makedirs(out_dir, exist_ok=True)
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    is_animation = bool(payload.get("animation", False))
+    is_animation = get_bool(payload, "animation", False)
 
     if is_animation:
         scene.render.filepath = os.path.join(out_dir, f"render_{stamp}_")

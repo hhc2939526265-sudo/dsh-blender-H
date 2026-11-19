@@ -13,16 +13,17 @@ import uuid
 from typing import Any, Dict, List
 
 from ..core import protocol
+from ..utils.errors import get_bool, get_dict, require_str
 
 
 def dispatch(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    prompt = payload["prompt"]
-    params = payload.get("params", {})
+    prompt = require_str(payload["prompt"], "prompt")
+    params = get_dict(payload, "params", {})
     spec, provider_name = ctx.bridge.providers.safe_call(
         "parse_natural_language", prompt, params)
     commands: List[Dict[str, Any]] = spec.get("commands", [])
 
-    dry_run = bool(payload.get("dry_run", False))
+    dry_run = get_bool(payload, "dry_run", False)
     receipts: List[Dict[str, Any]] = []
 
     if not dry_run:

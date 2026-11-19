@@ -2,6 +2,42 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.8] - 2026-11-19
+
+> 本轮在 Blender **5.3.0** 真机上完成审计、修复与回归，完整证据与复现脚本见 [AUDIT.md](AUDIT.md)。
+
+### Fixed
+
+- **A1（致命）** `addon_state.py` 模块内 `def get_logger()` 遮蔽 `from .utils.logger import get_logger` 导入，`get_logger("dsh_bridge", level=...)` 抛 `TypeError: get_logger() got an unexpected keyword argument 'level'`，插件注册直接失败。改为导入别名 `make_logger`。
+- **A2（致命）** `__init__.py` 在 `register()` 阶段遍历 `bpy.data.scenes`，而注册期 `bpy.data` 仍是 `_RestrictData` → `AttributeError: '_RestrictData' object has no attribute 'scenes'`。改为 `_sync_panels()` 守卫 + `bpy.app.timers.register(..., first_interval=0.2)` 延迟同步。
+- **V1** 闲置 TCP 连接可永久占满桥接（本地 DoS）：accept 后设 `handshake_timeout`（默认 5s），未握手连接数超 `max_connections*4` 直接 `503`，已握手连接才计入并发。
+- **V2** 并发上限 off-by-one：`max_connections=3` 时第 3 条被拒 → 改为只统计已握手连接，配置值即实际可用数。
+- **V4** 不校验客户端帧掩码：未掩码帧按 RFC 6455 回 close `1002`。
+- **V5** 单帧 / 分片无上限：新增 `max_message_size_mb`（默认 8），超限回 `1009`（控制帧另校验 FIN 与 125 字节上限）。
+- **V6** `400` 响应状态行写死 `Forbidden`：改为状态码短语表（`400 Bad Request` / `403 Forbidden` / `503 Service Unavailable`）。
+- **V7** 心跳 PING 每秒重复：增加 `last_ping_sent` 去重，未握手连接不参与心跳。
+- **V8** 口令非常量时间比较：改 `hmac.compare_digest`。
+- **V9** 配置写死在插件安装目录（升级即丢）：迁到 `%APPDATA%\DSH_Bridge\config\runtime_config.json`，旧文件首次加载自动迁移，`os.replace` 原子写。
+- **V10** 传输层：`verify_md5` 开启时空 md5 会跳过校验 → 必填；resume 仅在 `total_size/chunk_count/md5` 一致时生效；`add_chunk` 先校验索引再 `base64.b64decode(validate=True)`；`finish` 缺 md5 合并前拒绝落盘。
+- **V11** 指令队列无上限、丢弃不回包：新增 `QueueFullError` → `E_BUSY`（默认上限 256，可配 `max_pending_commands`），排队超时被丢弃的指令补发 `E_TIMEOUT`。
+- **V12** handler 参数校验缺失，错误类型 payload 会让 Blender C API 抛 `SystemError: <built-in method get of bpy_prop_collection ...>`：新增 `utils/errors.py`（`ParamError` + `require_*`/`get_*` 中文提示），`dispatcher` 统一归 `E_PARAM`。
+- **V13** DSH 桌面应用 Origin 为 `dsh-app://app`，上游只认 `localhost/127.0.0.1/::1` → 状态胶囊每 5 秒被 403，指示灯永远离线：`_check_origin` 支持完整 Origin 比较，默认 `allowed_origins` 放行 `dsh-app://app`，并引入 `CONFIG_VERSION = 2` 自动迁移旧配置；`bridge.py` 在配置为空时回落到默认值。
+
+### Changed
+
+- 版本号 `1.1.7` → `1.1.8`。
+- 配置项新增 `handshake_timeout`、`max_message_size_mb`、`max_pending_commands`；`allowed_origins` 支持完整 Origin 字符串。
+- 新增 `src/dsh_bundle/`：可被 DSH 插件管理器直接安装的原生 bundle（`package.json` + `cordis.patch.yml` + `blender_status` / `blender_commands` / `blender_exec` 三个工具 + 输入框状态胶囊）。原 `src/dsh_plugin/` 的自创 `manifest.json` 格式与虚构 `window.DSH` 宿主 API 无法加载，保留作历史参考并标注弃用。
+
+### 测试
+
+- 新增 `utils/errors.py` 级别参数校验后，113 条指令空 payload：**28 成功 / 85 失败 / 0 `E_EXEC` / 0 崩溃**（修复前 25 / 88 / 1）。
+- 错误类型 payload fuzz 两轮 226 条：**0 `E_EXEC`**（修复前约 70 条 `SystemError`）。
+- 协议用例 7/7、传输用例 10/10、纯 Python 回归 39/39（含连接上限、握手超时回收、未掩码 1002、超限 1009、口令、Origin 迁移）。
+- 真实工作流冒烟 13 成功（建模 / 变换 / 倒角 / PBR / 粒子 / 备份 / 渲染 / GLB 导出 / 算子调用）/ 7 条预期失败。
+- 端到端：`blender_status` → `running:true, addon_version:1.1.8, command_count:113`。
+- 说明：上游 `tests/` 中桩化断言基于旧的 `E_EXEC` 文案，未纳入本轮回归，欢迎按 `E_PARAM` 语义同步。
+
 ## [1.1.7] - 2026-11-18
 
 ### Fixed

@@ -15,6 +15,8 @@ import bpy
 from typing import Any, Dict, List, Optional
 
 from ..utils import paths
+from ..utils.errors import (ParamError, as_float, as_int, get_str,
+                            require_str)
 from . import character as Char
 from . import animation as Anim
 from . import effects as Eff
@@ -39,15 +41,23 @@ def character_pipeline(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def video_pipeline(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """视频 → 动作复刻 + 特效还原，对齐当前角色。"""
-    video_path: str = payload["video_path"]
+    video_path: str = require_str(payload["video_path"], "video_path")
     if not paths.is_within(paths.subdir("transfer"), os.path.abspath(video_path)):
         raise PermissionError("视频路径越出传输目录，拒绝解析")
-    kind: str = payload.get("kind", "both")  # mocap / effect / both
+    kind: str = get_str(payload, "kind", "both")  # mocap / effect / both
+    if kind not in ("mocap", "effect", "both"):
+        raise ParamError(f"不支持的解析类型: {kind}（mocap / effect / both）")
+    confidence = payload.get("confidence", ctx.config.get("mocap_confidence", 0.6))
+    if "confidence" in payload:
+        confidence = as_float(confidence, "confidence")
+    effect_strength = payload.get("effect_strength",
+                                   ctx.config.get("effect_strength", 0.8))
+    if "effect_strength" in payload:
+        effect_strength = as_float(effect_strength, "effect_strength")
     params = {
         "fps": ctx.config.get("animation_fps", 24),
-        "confidence": payload.get("confidence", ctx.config.get("mocap_confidence", 0.6)),
-        "effect_strength": payload.get("effect_strength",
-                                       ctx.config.get("effect_strength", 0.8)),
+        "confidence": confidence,
+        "effect_strength": effect_strength,
     }
 
     motion_result: Dict[str, Any] = {}
@@ -102,7 +112,7 @@ def iterate_pipeline(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     if armature is not None:
         animation = Export.export_animation({"object": armature.name}, ctx)
     return {"asset": asset, "animation": animation,
-            "iteration": int(payload.get("iteration", 1))}
+            "iteration": as_int(payload.get("iteration", 1), "iteration")}
 
 
 def register(dispatcher) -> None:

@@ -26,6 +26,9 @@ from typing import Any, Dict, List, Optional, Tuple
 import bpy
 
 from . import addon_catalog
+from ..utils.errors import (ParamError, as_bool, as_float, as_int, get_dict,
+                            get_int, get_str, get_str_list, require_float_list,
+                            require_str)
 
 # ---------------------------------------------------------------------------
 # 能力分类关键词表（可在配置中扩展，禁止把魔法字符串散落到调用处）
@@ -170,7 +173,7 @@ def _sanitize_params(params: Dict[str, Any]) -> Dict[str, Any]:
                 isinstance(v, _ALLOWED_SCALAR) for v in value):
             cleaned[key] = list(value)
         else:
-            raise ValueError(f"参数 {key} 类型不允许: {type(value).__name__}")
+            raise ParamError(f"参数 {key} 类型不允许: {type(value).__name__}")
     return cleaned
 
 
@@ -196,41 +199,45 @@ def _check_module_policy(module: str, ctx) -> None:
 
 
 def _coerce_node_input(socket, value: Any) -> Any:
-    """按节点输入槽类型做基础类型转换，类型不兼容抛 ValueError。"""
+    """按节点输入槽类型做基础类型转换，类型不兼容抛 ParamError。"""
     socket_type = getattr(socket, "type", "VALUE")
-    try:
-        if socket_type in ("INT", "BOOLEAN"):
-            return bool(value) if socket_type == "BOOLEAN" else int(value)
-        if socket_type in ("FLOAT", "VALUE"):
-            return float(value)
-        if socket_type == "STRING":
-            return str(value)
-        if socket_type in ("VECTOR", "COLOR"):
-            if not isinstance(value, (list, tuple)):
-                raise ValueError("向量 / 颜色输入需为数值数组")
-            return [float(v) for v in value]
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"输入槽 {getattr(socket, 'name', '?')} 类型不兼容: {exc}") from exc
+    param = f"输入槽 {getattr(socket, 'name', '?')}"
+    if socket_type in ("INT", "BOOLEAN"):
+        return as_bool(value, param) if socket_type == "BOOLEAN" \
+            else as_int(value, param)
+    if socket_type in ("FLOAT", "VALUE"):
+        return as_float(value, param)
+    if socket_type == "STRING":
+        return require_str(value, param)
+    if socket_type in ("VECTOR", "COLOR"):
+        return require_float_list(value, param, min_len=3)
     return value
 
 
 def _validate_module_name(module: str) -> str:
     """校验插件模块名格式，拒绝路径穿越 / 非法字符。"""
-    module = (module or "").strip()
+    require_str(module, "module")
+    module = module.strip()
     if not module:
-        raise ValueError("插件模块名不能为空")
+        raise ParamError("插件模块名不能为空")
     if not _MODULE_NAME_RE.match(module):
-        raise ValueError(f"插件模块名非法: {module}（仅允许字母 / 数字 / 下划线 / 点号）")
+        raise ParamError(f"插件模块名非法: {module}（仅允许字母 / 数字 / 下划线 / 点号）")
     return module
 
 
-def _require_object(name: str):
+def _require_object(name: Any):
     """按名称取对象；``active`` 解析为当前活动对象，不存在抛 KeyError。"""
-    if name is None or str(name).strip().lower() == "active":
+    if isinstance(name, str) and name.strip().lower() == "active":
         obj = bpy.context.view_layer.objects.active
         if obj is None:
             raise KeyError("当前没有活动对象，请先在场景中选中目标对象")
         return obj
+    if name is None:
+        # 显式拦截 None：bpy_prop_collection.get(None) 会从 Blender C API 抛出
+        # 晦涩的 SystemError（"returned a result with an exception set"）
+        raise ParamError("缺少必填参数: object")
+    if not isinstance(name, str):
+        raise ParamError(f"object 需为对象名称字符串，收到 {type(name).__name__}")
     obj = bpy.data.objects.get(name)
     if obj is None:
         raise KeyError(f"对象不存在: {name}")
@@ -342,7 +349,7 @@ def list_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def detail_addon(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """查询单个插件的完整元信息与算子参数定义。"""
-    module_name = payload["module"]
+    module_name = require_str(payload["module"], "module")
     max_ops = int(ctx.config.get("addon_max_operators_per_addon", 50))
     addons = _collect_addons(max_ops)
     matched = next((a for a in addons if a["module"] == module_name), None)
@@ -401,11 +408,11 @@ def invoke_operator(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         params    算子关键字参数（仅 JSON 原始类型）
         mode      execute（默认）/ invoke（INVOKE_DEFAULT，弹出交互面板）
     """
-    idname = payload["operator"]
-    params = _sanitize_params(payload.get("params", {}))
-    mode = payload.get("mode", "execute")
+    idname = require_str(payload["operator"], "operator")
+    params = _sanitize_params(get_dict(payload, "params", {}))
+    mode = get_str(payload, "mode", "execute")
     if mode not in ("execute", "invoke"):
-        raise ValueError(f"调用模式非法: {mode}（execute / invoke）")
+        raise ParamError(f"调用模式非法: {mode}（execute / invoke）")
 
     # 算子安全策略：总开关 → 黑名单 → 白名单前缀
     _check_operator_policy(idname, ctx)
@@ -421,8 +428,8 @@ def invoke_operator(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def match_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """按自然语言意图匹配最贴合的已启用插件。"""
-    intent = payload["intent"]
-    top_n = int(payload.get("top_n", 5))
+    intent = require_str(payload["intent"], "intent")
+    top_n = get_int(payload, "top_n", 5)
     max_ops = int(ctx.config.get("addon_max_operators_per_addon", 50))
     addons = _collect_addons(max_ops)
 
@@ -447,8 +454,8 @@ def match_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def catalog(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """查询常用插件目录：按能力分类 / 关键词过滤，返回推荐桥接指令。"""
-    capability = payload.get("capability")
-    keyword = payload.get("keyword")
+    capability = get_str(payload, "capability")
+    keyword = get_str(payload, "keyword")
     plugins = addon_catalog.query_catalog(capability, keyword)
     return {"total": len(plugins), "plugins": plugins}
 
@@ -502,10 +509,10 @@ def status_addons(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def operator_search(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """跨全部已注册算子按关键词检索（ID / 标签），返回归属前缀与算子定义。"""
-    keyword = str(payload.get("keyword", "")).strip().lower()
+    keyword = (get_str(payload, "keyword", "") or "").strip().lower()
     if not keyword:
-        raise ValueError("检索关键词 keyword 不能为空")
-    top_n = int(payload.get("top_n", 30))
+        raise ParamError("检索关键词 keyword 不能为空")
+    top_n = get_int(payload, "top_n", 30)
     groups = _operator_classes_by_prefix()
     results: List[Dict[str, Any]] = []
     for prefix, ops in groups.items():
@@ -519,12 +526,16 @@ def operator_search(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def operator_batch(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """对一批对象依次套用同一算子，逐个隔离异常并回执成功 / 失败清单。"""
-    idname = payload["operator"]
-    object_refs = payload.get("objects") or []
+    idname = require_str(payload["operator"], "operator")
+    object_refs = get_str_list(payload, "objects")
     if not object_refs:
-        raise ValueError("objects 对象列表不能为空")
-    params = _sanitize_params(payload.get("params", {}))
-    per_object = payload.get("per_object", {}) or {}
+        raise ParamError("objects 对象列表不能为空")
+    params = _sanitize_params(get_dict(payload, "params", {}))
+    per_object = get_dict(payload, "per_object", {})
+    for key, value in per_object.items():
+        if value is not None and not isinstance(value, dict):
+            raise ParamError(
+                f"per_object.{key} 需为对象，收到 {type(value).__name__}")
 
     _check_operator_policy(idname, ctx)
     op = _resolve_operator(idname)
@@ -551,14 +562,14 @@ def operator_batch(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def nodegroup_apply(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """把已存在的几何节点组挂到对象上（来自资产库 / 已启用插件），可覆写输入。"""
     obj = _require_object(payload.get("object"))
-    group_name = payload["node_group"]
+    group_name = require_str(payload["node_group"], "node_group")
     node_group = bpy.data.node_groups.get(group_name)
     if node_group is None:
         raise KeyError(f"几何节点组不存在: {group_name}（请先由插件 / 资产库导入）")
 
     mod = obj.modifiers.new(name=f"{group_name}_GN", type="NODES")
     mod.node_group = node_group
-    inputs = payload.get("inputs", {}) or {}
+    inputs = get_dict(payload, "inputs", {})
     applied_inputs: List[str] = []
     for socket_name, value in inputs.items():
         if socket_name in mod.inputs:

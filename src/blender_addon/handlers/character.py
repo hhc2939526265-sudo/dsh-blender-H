@@ -20,6 +20,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..compat import version_compat
 from ..utils import paths
+from ..utils.errors import (as_float, get_str, get_str_list,
+                            require_str_list)
 from . import _helpers as H
 
 
@@ -209,8 +211,9 @@ def rig_object(mesh_obj: bpy.types.Object, armature: Optional[bpy.types.Object] 
 # ---------------------------------------------------------------------------
 def build(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """图片驱动角色建模主入口。"""
-    image_paths: List[str] = payload.get("image_paths", [])
-    params = {"quality": payload.get("quality", ctx.config.get("mesh_quality", "medium")),
+    image_paths: List[str] = get_str_list(payload, "image_paths")
+    params = {"quality": get_str(payload, "quality",
+                                 ctx.config.get("mesh_quality", "medium")),
                "confidence": ctx.config.get("mocap_confidence", 0.6)}
 
     spec, provider_name = ctx.bridge.providers.safe_call(
@@ -332,7 +335,9 @@ def rig(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def shape_keys(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """为指定网格批量写入面部形状键。"""
     obj = H.require_object(payload["object"])
-    names = payload.get("shape_keys") or spec_default_keys()
+    raw_names = payload.get("shape_keys")
+    names = (require_str_list(raw_names, "shape_keys", min_len=1)
+             if raw_names else spec_default_keys())
     count = _add_shape_keys(obj, names)
     return {"object": obj.name, "shape_keys": count}
 
@@ -340,12 +345,12 @@ def shape_keys(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def uv_bake(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     """从参考图提取颜色 / 粗糙度信息并写入基础 PBR 材质。"""
     obj = H.require_object(payload["object"])
-    image_path = payload.get("image_path", "")
+    image_path = get_str(payload, "image_path", "")
     color = _average_image_color(image_path) if image_path else None
     mat = _create_material(
         f"Baked_{obj.name}", color or [0.7, 0.7, 0.7, 1.0],
-        roughness=float(payload.get("roughness", 0.7)),
-        metallic=float(payload.get("metallic", 0.0)))
+        roughness=as_float(payload.get("roughness", 0.7), "roughness"),
+        metallic=as_float(payload.get("metallic", 0.0), "metallic"))
     obj.data.materials.clear()
     obj.data.materials.append(mat)
     # 按节点类型查找 Principled BSDF，避免节点被重命名后取空；插槽缺失时静默降级

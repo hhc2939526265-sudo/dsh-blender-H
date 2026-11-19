@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 import bpy
 
 from .config import load_config, save_config
-from .utils.logger import get_logger
+from .utils.logger import get_logger as make_logger
 from .core.bridge import Bridge
 
 # 定时器标识
@@ -32,7 +32,7 @@ _state: Dict[str, Any] = {
 def init_runtime() -> Dict[str, Any]:
     """加载配置与日志器（插件启用时调用一次）。"""
     cfg = load_config()
-    logger = get_logger("dsh_bridge", level=cfg.get("log_level", "INFO"),
+    logger = make_logger("dsh_bridge", level=cfg.get("log_level", "INFO"),
                         log_dir=cfg.get("log_dir"),
                         keep_days=int(cfg.get("log_keep_days", 14)))
     _state["config"] = cfg

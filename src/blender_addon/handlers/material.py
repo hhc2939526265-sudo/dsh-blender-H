@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 
 from ..compat import version_compat
 from ..utils import paths
+from ..utils.errors import (ParamError, as_float, get_bool, get_dict, get_str,
+                            require_float_list, require_str)
 from . import _helpers as H
 
 
@@ -39,12 +41,17 @@ def _apply_params(bsdf, params: Dict[str, Any]) -> None:
     }
     for key, logical in mapping.items():
         if key in params and params[key] is not None:
-            version_compat.set_principled_input(bsdf, logical, params[key])
+            value = params[key]
+            if key in ("base_color", "emission"):
+                require_float_list(value, key, min_len=3)
+            else:
+                as_float(value, key)
+            version_compat.set_principled_input(bsdf, logical, value)
 
 
 def pbr_generate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    mat_name = payload.get("material_name", f"PBR_{obj.name}")
+    mat_name = get_str(payload, "material_name", f"PBR_{obj.name}")
     mat = _new_pbr_material(mat_name)
     bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
     _apply_params(bsdf, payload)
@@ -57,7 +64,7 @@ def pbr_generate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
                                 ("normal_image", "normal"),
                                 ("roughness_image", "roughness"),
                                 ("ao_image", "base_color")):
-        image_path = payload.get(channel)
+        image_path = get_str(payload, channel)
         if not image_path:
             continue
         # 贴图仅允许读取传输缓存目录内的文件，防本地任意图片加载
@@ -84,8 +91,8 @@ def pbr_generate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def batch_replace(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     objects = H.list_objects(payload.get("objects"))
-    material_name = payload["material_name"]
-    mat = bpy.data.materials.get(material_name)
+    material_name = require_str(payload["material_name"], "material_name")
+    mat = H.get_datablock(bpy.data.materials, material_name, "material_name")
     if mat is None:
         raise KeyError(f"材质不存在: {material_name}")
     replaced: List[str] = []
@@ -100,7 +107,7 @@ def batch_replace(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 def batch_adjust(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     objects = H.list_objects(payload.get("objects"))
-    params = payload.get("params", {})
+    params = get_dict(payload, "params", {})
     adjusted: List[str] = []
     for obj in objects:
         if obj.type != "MESH" or not obj.data.materials:
@@ -115,7 +122,7 @@ def batch_adjust(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 def preset_save(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    name = paths.safe_name(payload["name"])
+    name = paths.safe_name(require_str(payload["name"], "name"))
     obj = H.require_object(payload["object"])
     mat = obj.active_material
     if mat is None:
@@ -138,7 +145,7 @@ def preset_save(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 
 
 def preset_load(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    name = paths.safe_name(payload["name"])
+    name = paths.safe_name(require_str(payload["name"], "name"))
     preset_path = os.path.join(paths.subdir("presets"), f"{name}.json")
     if not os.path.isfile(preset_path):
         raise FileNotFoundError(f"预设不存在: {name}")
@@ -160,7 +167,7 @@ def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     if src_mat is None:
         raise KeyError("源对象未挂载材质")
     new_mat = src_mat.copy()
-    new_mat.name = payload.get("new_name", f"{src_mat.name}_copy")
+    new_mat.name = get_str(payload, "new_name", f"{src_mat.name}_copy")
     target = H.require_object(payload["target"]) if payload.get("target") else src
     target.data.materials.append(new_mat)
     return {"source": src.name, "material": new_mat.name, "target": target.name}
@@ -171,14 +178,16 @@ def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def assign(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    mat = bpy.data.materials.get(payload["material_name"])
+    material_name = require_str(payload["material_name"], "material_name")
+    mat = H.get_datablock(bpy.data.materials, material_name, "material_name")
     if mat is None:
-        raise KeyError(f"材质不存在: {payload['material_name']}")
-    if payload.get("replace", True):
+        raise KeyError(f"材质不存在: {material_name}")
+    replace = get_bool(payload, "replace", True)
+    if replace:
         obj.data.materials.clear()
     obj.data.materials.append(mat)
     return {"object": obj.name, "material": mat.name,
-            "replace": payload.get("replace", True)}
+            "replace": replace}
 
 
 # ---------------------------------------------------------------------------
@@ -208,19 +217,21 @@ def list_materials(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def emission(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    mat_name = payload.get("material_name", f"Glow_{obj.name}")
+    mat_name = get_str(payload, "material_name", f"Glow_{obj.name}")
     mat = _new_pbr_material(mat_name)
     bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
-    color = payload.get("color", [1.0, 0.8, 0.3, 1.0])
+    color = require_float_list(payload.get("color", [1.0, 0.8, 0.3, 1.0]),
+                               "color", min_len=3)
+    strength = as_float(payload.get("strength", 3.0), "strength")
     version_compat.set_principled_input(bsdf, "base_color", color)
     version_compat.set_principled_input(bsdf, "emission", color)
-    version_compat.set_principled_input(bsdf, "emission_strength",
-                                        float(payload.get("strength", 3.0)))
+    version_compat.set_principled_input(bsdf, "emission_strength", strength)
     if "alpha" in payload:
-        version_compat.set_principled_input(bsdf, "alpha", payload["alpha"])
+        version_compat.set_principled_input(
+            bsdf, "alpha", as_float(payload["alpha"], "alpha"))
     obj.data.materials.append(mat)
     return {"object": obj.name, "material": mat.name,
-            "strength": float(payload.get("strength", 3.0))}
+            "strength": strength}
 
 
 def register(dispatcher) -> None:

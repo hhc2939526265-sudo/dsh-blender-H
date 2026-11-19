@@ -15,6 +15,9 @@ import random
 from typing import Any, Dict, List
 
 from ..compat import version_compat
+from ..utils.errors import (ParamError, as_int, get_bool, get_float, get_int,
+                            get_list, get_str, get_vec3, require_float_list,
+                            require_list, require_vec3)
 from . import _helpers as H
 
 # 基础几何体算子映射
@@ -31,31 +34,46 @@ _PRIMITIVE_OPS = {
 }
 
 
+def _require_range(value: Any, param: str) -> List[Any]:
+    """校验 [[最小, 最大], ...] 形式的数值区间列表。"""
+    items = require_list(value, param, min_len=1)
+    ranges: List[Any] = []
+    for index, item in enumerate(items):
+        pair = require_float_list(item, f"{param}[{index}]", min_len=2)
+        if len(pair) != 2:
+            raise ParamError(
+                f"{param}[{index}] 需为 [最小值, 最大值] 两个数字")
+        ranges.append((pair[0], pair[1]))
+    return ranges
+
+
 # ---------------------------------------------------------------------------
 # 1. 基础几何体生成
 # ---------------------------------------------------------------------------
 def add_primitive(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    ptype = payload.get("type", "cube")
+    ptype = get_str(payload, "type", "cube")
     if ptype not in _PRIMITIVE_OPS:
-        raise ValueError(f"不支持的几何体类型: {ptype}")
+        raise ParamError(f"不支持的几何体类型: {ptype}")
 
-    location = payload.get("location", (0.0, 0.0, 0.0))
-    rotation = payload.get("rotation", (0.0, 0.0, 0.0))
-    scale = payload.get("scale", (1.0, 1.0, 1.0))
-    name = H.unique_name(payload.get("name", ptype))
+    location = get_vec3(payload, "location", (0.0, 0.0, 0.0))
+    rotation = get_vec3(payload, "rotation", (0.0, 0.0, 0.0))
+    scale = get_vec3(payload, "scale", (1.0, 1.0, 1.0))
+    name = H.unique_name(payload.get("name", ptype), "name")
 
     op = _PRIMITIVE_OPS[ptype]
     kwargs: Dict[str, Any] = {"location": location, "rotation": rotation}
-    # 各算子细分参数按需透传
-    for key in ("radius", "depth", "vertices", "ring_count",
-                "major_radius", "minor_radius", "subdivisions"):
+    # 各算子细分参数按需透传（数字参数先做类型校验，避免 C API 晦涩报错）
+    for key in ("radius", "depth", "major_radius", "minor_radius"):
         if key in payload:
-            kwargs[key] = payload[key]
+            kwargs[key] = get_float(payload, key)
+    for key in ("vertices", "ring_count", "subdivisions"):
+        if key in payload:
+            kwargs[key] = get_int(payload, key)
     op(**kwargs)
     obj = bpy.context.active_object
     obj.name = name
     obj.scale = scale
-    if payload.get("smooth", False):
+    if get_bool(payload, "smooth", False):
         version_compat.shade_smooth(obj)
     return {"object": obj.name, "type": ptype,
             "vertices": len(obj.data.vertices)}
@@ -67,11 +85,14 @@ def add_primitive(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def boolean(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["target"])
     operand = H.require_object(payload["operand"])
-    operation = payload.get("operation", "UNION")  # UNION / DIFFERENCE / INTERSECT
+    operation = get_str(payload, "operation", "UNION")  # UNION / DIFFERENCE / INTERSECT
+    if operation not in ("UNION", "DIFFERENCE", "INTERSECT"):
+        raise ParamError(
+            f"布尔运算类型非法: {operation}（UNION / DIFFERENCE / INTERSECT）")
     mod = H.add_modifier(target, "BOOLEAN", f"bool_{operation.lower()}")
     mod.operation = operation
     mod.object = operand
-    if payload.get("apply", True):
+    if get_bool(payload, "apply", True):
         version_compat.apply_modifier(target, mod.name)
         bpy.data.objects.remove(operand, do_unlink=True)
     return {"object": target.name, "operation": operation,
@@ -83,7 +104,7 @@ def boolean(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def extrude(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    amount = float(payload.get("amount", 0.1))
+    amount = get_float(payload, "amount", 0.1)
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -97,7 +118,7 @@ def extrude(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def loop_cut(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    cuts = int(payload.get("cuts", 1))
+    cuts = get_int(payload, "cuts", 1)
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.loopcut_slide(
@@ -113,9 +134,9 @@ def loop_cut(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def bevel(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "BEVEL", "bevel")
-    mod.width = float(payload.get("width", 0.05))
-    mod.segments = int(payload.get("segments", 3))
-    if payload.get("apply", False):
+    mod.width = get_float(payload, "width", 0.05)
+    mod.segments = get_int(payload, "segments", 3)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "width": mod.width, "segments": mod.segments}
 
@@ -126,11 +147,11 @@ def bevel(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def array(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "ARRAY", "array")
-    mod.count = int(payload.get("count", 3))
-    offset = payload.get("relative_offset", (1.0, 0.0, 0.0))
+    mod.count = get_int(payload, "count", 3)
+    offset = get_vec3(payload, "relative_offset", (1.0, 0.0, 0.0))
     mod.use_relative_offset = True
     mod.relative_offset_displace = offset
-    if payload.get("apply", False):
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "count": mod.count}
 
@@ -139,22 +160,21 @@ def array(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 7. 曲线生成
 # ---------------------------------------------------------------------------
 def curve(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    points: List[List[float]] = payload.get("points") or []
+    points = get_list(payload, "points")
     if len(points) < 2:
-        raise ValueError("曲线至少需要 2 个坐标点")
-    for co in points:
-        if not isinstance(co, (list, tuple)) or len(co) < 3:
-            raise ValueError("曲线坐标点至少包含 X / Y / Z 三个分量")
-    name = H.unique_name(payload.get("name", "curve"))
+        raise ParamError("曲线至少需要 2 个坐标点")
+    points = [require_float_list(co, f"points[{index}]", min_len=3)
+              for index, co in enumerate(points)]
+    name = H.unique_name(get_str(payload, "name", "curve"), "name")
     curve_data = bpy.data.curves.new(name=name, type="CURVE")
     curve_data.dimensions = "3D"
     curve_data.resolution_u = 2
-    curve_data.bevel_depth = float(payload.get("bevel_depth", 0.02))
+    curve_data.bevel_depth = get_float(payload, "bevel_depth", 0.02)
     spline = curve_data.splines.new("POLY")
     spline.points.add(len(points) - 1)
     for pt, co in zip(spline.points, points):
         pt.co = (co[0], co[1], co[2], 1.0)
-    spline.use_cyclic_u = payload.get("cyclic", False)
+    spline.use_cyclic_u = get_bool(payload, "cyclic", False)
     obj = bpy.data.objects.new(name, curve_data)
     bpy.context.collection.objects.link(obj)
     return {"object": obj.name, "points": len(points)}
@@ -166,8 +186,8 @@ def curve(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def solidify(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "SOLIDIFY", "solidify")
-    mod.thickness = float(payload.get("thickness", 0.02))
-    if payload.get("apply", False):
+    mod.thickness = get_float(payload, "thickness", 0.02)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "thickness": mod.thickness}
 
@@ -179,8 +199,8 @@ def remesh(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "REMESH", "remesh")
     mod.mode = "VOXEL"
-    mod.voxel_size = float(payload.get("voxel_size", 0.05))
-    if payload.get("apply", True):
+    mod.voxel_size = get_float(payload, "voxel_size", 0.05)
+    if get_bool(payload, "apply", True):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "vertices": len(obj.data.vertices)}
 
@@ -193,8 +213,8 @@ def inset(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.mesh.inset(thickness=float(payload.get("thickness", 0.05)),
-                       depth=float(payload.get("depth", 0.0)))
+    bpy.ops.mesh.inset(thickness=get_float(payload, "thickness", 0.05),
+                       depth=get_float(payload, "depth", 0.0))
     bpy.ops.object.mode_set(mode="OBJECT")
     return {"object": obj.name}
 
@@ -205,9 +225,9 @@ def inset(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def subdivide(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "SUBSURF", "subsurf")
-    mod.levels = int(payload.get("levels", 1))
-    mod.render_levels = int(payload.get("render_levels", mod.levels))
-    if payload.get("apply", False):
+    mod.levels = get_int(payload, "levels", 1)
+    mod.render_levels = get_int(payload, "render_levels", mod.levels)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "levels": mod.levels}
 
@@ -218,8 +238,8 @@ def subdivide(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def decimate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "DECIMATE", "decimate")
-    mod.ratio = float(payload.get("ratio", 0.5))
-    if payload.get("apply", True):
+    mod.ratio = get_float(payload, "ratio", 0.5)
+    if get_bool(payload, "apply", True):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "vertices": len(obj.data.vertices)}
 
@@ -242,7 +262,7 @@ def recalc_normals(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def origin_set(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    target = payload.get("target", "ORIGIN_GEOMETRY")  # ORIGIN_GEOMETRY / ORIGIN_CURSOR
+    target = get_str(payload, "target", "ORIGIN_GEOMETRY")  # ORIGIN_GEOMETRY / ORIGIN_CURSOR
     version_compat.set_active(obj)
     bpy.ops.object.origin_set(type=target)
     return {"object": obj.name, "origin": list(obj.location)}
@@ -254,7 +274,7 @@ def origin_set(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def align(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     target = H.require_object(payload["target"])
-    axis = payload.get("axis", "XYZ")
+    axis = get_str(payload, "axis", "XYZ")
     for i, axis_name in enumerate(("X", "Y", "Z")):
         if axis_name in axis:
             obj.location[i] = target.location[i]
@@ -279,7 +299,7 @@ def flip_normals(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def rename(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    new_name = H.unique_name(payload["new_name"])
+    new_name = H.unique_name(payload["new_name"], "new_name")
     obj.name = new_name
     if obj.type == "MESH":
         obj.data.name = new_name
@@ -290,12 +310,17 @@ def rename(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 18. 参数化批量生成
 # ---------------------------------------------------------------------------
 def batch_generate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    count = int(payload.get("count", 5))
-    ptype = payload.get("type", "cube")
-    prefix = payload.get("name_prefix", "batch")
-    loc_range = payload.get("location_range", [[-2, 2], [-2, 2], [0, 2]])
-    scale_range = payload.get("scale_range", [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]])
-    rng = random.Random(payload.get("seed", 42))
+    count = get_int(payload, "count", 5)
+    ptype = get_str(payload, "type", "cube")
+    prefix = get_str(payload, "name_prefix", "batch")
+    loc_range = _require_range(
+        payload.get("location_range", [[-2, 2], [-2, 2], [0, 2]]),
+        "location_range")
+    scale_range = _require_range(
+        payload.get("scale_range", [[0.5, 1.0], [0.5, 1.0], [0.5, 1.0]]),
+        "scale_range")
+    seed = payload.get("seed", 42)
+    rng = random.Random(42 if seed is None else as_int(seed, "seed"))
 
     created: List[str] = []
     for i in range(count):
@@ -340,12 +365,12 @@ def select(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def mirror(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "MIRROR", "mirror")
-    axis = payload.get("axis", "X")
+    axis = get_str(payload, "axis", "X")
     mod.use_x = axis == "X"
     mod.use_y = axis == "Y"
     mod.use_z = axis == "Z"
-    mod.use_clip = payload.get("clip", True)
-    if payload.get("apply", False):
+    mod.use_clip = get_bool(payload, "clip", True)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "axis": axis}
 
@@ -358,7 +383,7 @@ def weld(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.mesh.remove_doubles(threshold=float(payload.get("distance", 0.0001)))
+    bpy.ops.mesh.remove_doubles(threshold=get_float(payload, "distance", 0.0001))
     bpy.ops.object.mode_set(mode="OBJECT")
     return {"object": obj.name, "vertices": len(obj.data.vertices)}
 
@@ -380,7 +405,7 @@ def uv_unwrap(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
-    bpy.ops.uv.smart_project(angle_limit=float(payload.get("angle_limit", 66.0)))
+    bpy.ops.uv.smart_project(angle_limit=get_float(payload, "angle_limit", 66.0))
     bpy.ops.object.mode_set(mode="OBJECT")
     return {"object": obj.name, "uv_layers": len(obj.data.uv_layers)}
 
@@ -403,7 +428,7 @@ def apply_all(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def transform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     H.set_transform(obj, payload)
-    if payload.get("apply", False):
+    if get_bool(payload, "apply", False):
         H.apply_transform(obj)
     return {"object": obj.name, "location": list(obj.location),
             "rotation": list(obj.rotation_euler), "scale": list(obj.scale)}
@@ -414,12 +439,13 @@ def transform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    linked = bool(payload.get("linked", False))
+    linked = get_bool(payload, "linked", False)
     new_obj = obj.copy()
     if not linked:
         new_obj.data = obj.data.copy()
     bpy.context.collection.objects.link(new_obj)
-    new_obj.name = H.unique_name(payload.get("name", f"{obj.name}_dup"))
+    new_obj.name = H.unique_name(
+        get_str(payload, "name", f"{obj.name}_dup"), "name")
     H.set_transform(new_obj, payload)
     return {"source": obj.name, "object": new_obj.name, "linked": linked}
 
@@ -442,9 +468,9 @@ def join(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def separate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
-    sep_type = payload.get("type", "LOOSE")
+    sep_type = get_str(payload, "type", "LOOSE")
     if sep_type not in ("LOOSE", "MATERIAL", "SELECTION"):
-        raise ValueError(f"分离类型非法: {sep_type}（LOOSE / MATERIAL / SELECTION）")
+        raise ParamError(f"分离类型非法: {sep_type}（LOOSE / MATERIAL / SELECTION）")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.separate(type=sep_type)
@@ -458,10 +484,10 @@ def separate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def screw(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "SCREW", "screw")
-    mod.angle = float(payload.get("angle", 2 * math.pi))
-    mod.steps = int(payload.get("steps", 16))
-    mod.iterations = int(payload.get("iterations", 1))
-    if payload.get("apply", False):
+    mod.angle = get_float(payload, "angle", 2 * math.pi)
+    mod.steps = get_int(payload, "steps", 16)
+    mod.iterations = get_int(payload, "iterations", 1)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "angle": mod.angle, "steps": mod.steps}
 
@@ -472,10 +498,10 @@ def screw(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def wireframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "WIREFRAME", "wireframe")
-    mod.thickness = float(payload.get("thickness", 0.02))
-    mod.offset = float(payload.get("offset", 0.0))
-    mod.use_replace = bool(payload.get("replace", True))
-    if payload.get("apply", False):
+    mod.thickness = get_float(payload, "thickness", 0.02)
+    mod.offset = get_float(payload, "offset", 0.0)
+    mod.use_replace = get_bool(payload, "replace", True)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "thickness": mod.thickness}
 
@@ -486,12 +512,12 @@ def wireframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def displace(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "DISPLACE", "displace")
-    mod.strength = float(payload.get("strength", 0.2))
-    mod.mid_level = float(payload.get("mid_level", 0.5))
-    direction = payload.get("direction", "NORMAL")
+    mod.strength = get_float(payload, "strength", 0.2)
+    mod.mid_level = get_float(payload, "mid_level", 0.5)
+    direction = get_str(payload, "direction", "NORMAL")
     if direction in ("NORMAL", "X", "Y", "Z"):
         mod.direction = direction
-    if payload.get("apply", False):
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "strength": mod.strength}
 
@@ -502,8 +528,8 @@ def displace(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def edge_split(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     mod = H.add_modifier(obj, "EDGE_SPLIT", "edge_split")
-    mod.split_angle = float(payload.get("split_angle", 30.0))
-    if payload.get("apply", False):
+    mod.split_angle = get_float(payload, "split_angle", 30.0)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "split_angle": mod.split_angle}
 
@@ -516,11 +542,11 @@ def shrinkwrap(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["target"])
     mod = H.add_modifier(obj, "SHRINKWRAP", "shrinkwrap")
     mod.target = target
-    method = payload.get("wrap_method", "NEAREST_SURFACEPOINT")
+    method = get_str(payload, "wrap_method", "NEAREST_SURFACEPOINT")
     if method in ("NEAREST_SURFACEPOINT", "PROJECT", "TARGET_PROJECT"):
         mod.wrap_method = method
-    mod.offset = float(payload.get("offset", 0.0))
-    if payload.get("apply", False):
+    mod.offset = get_float(payload, "offset", 0.0)
+    if get_bool(payload, "apply", False):
         version_compat.apply_modifier(obj, mod.name)
     return {"object": obj.name, "target": target.name, "method": mod.wrap_method}
 
@@ -531,17 +557,20 @@ def shrinkwrap(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def crease(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     obj = H.require_object(payload["object"])
     if obj.type != "MESH":
-        raise ValueError("折痕标记仅支持网格对象")
-    value = float(payload.get("value", 1.0))
+        raise ParamError("折痕标记仅支持网格对象")
+    value = get_float(payload, "value", 1.0)
     edge_indexes = payload.get("edges")
+    if edge_indexes is not None:
+        edge_indexes = require_list(edge_indexes, "edges")
     edges = obj.data.edges
     if edge_indexes is None:
         for edge in edges:
             edge.crease = value
     else:
-        for idx in edge_indexes:
-            if 0 <= int(idx) < len(edges):
-                edges[int(idx)].crease = value
+        for index, idx in enumerate(edge_indexes):
+            edge_index = as_int(idx, f"edges[{index}]")
+            if 0 <= edge_index < len(edges):
+                edges[edge_index].crease = value
     return {"object": obj.name, "value": value,
             "edges": len(edges) if edge_indexes is None else len(edge_indexes)}
 

@@ -18,7 +18,23 @@ import random
 from typing import Any, Dict, List, Optional
 
 from ..compat import version_compat
+from ..utils.errors import (ParamError, as_bool, as_float, as_int, get_bool,
+                            get_dict, get_str, require_float_list, require_str,
+                            require_vec3)
 from . import _helpers as H
+
+
+def _require_color(value: Any, param: str) -> List[float]:
+    """颜色参数：3 ~ 4 个分量的数字数组（RGB / RGBA）。"""
+    items = require_float_list(value, param, min_len=3)
+    if len(items) > 4:
+        raise ParamError(f"{param} 最多 4 个分量，收到 {len(items)} 个")
+    return items
+
+
+def _require_spec(payload: Dict[str, Any], key: str) -> Dict[str, Any]:
+    """特效子参数体必须是对象（缺失 / null 视为空对象）。"""
+    return get_dict(payload, key, {})
 
 
 def _emission_material(name: str, color: List[float], strength: float,
@@ -43,11 +59,11 @@ def _emission_material(name: str, color: List[float], strength: float,
 # ---------------------------------------------------------------------------
 def particle(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     emitter = H.require_object(payload["object"])
-    spec = payload.get("particle", {})
-    count = int(spec.get("count", 200))
-    life = float(spec.get("life", 2.0))
-    speed = float(spec.get("speed", 1.0))
-    size = float(spec.get("size", 0.05))
+    spec = _require_spec(payload, "particle")
+    count = as_int(spec.get("count", 200), "particle.count")
+    life = as_float(spec.get("life", 2.0), "particle.life")
+    speed = as_float(spec.get("speed", 1.0), "particle.speed")
+    size = as_float(spec.get("size", 0.05), "particle.size")
 
     mod = emitter.modifiers.new(name="effect_particles", type="PARTICLE_SYSTEM")
     psys = mod.particle_system
@@ -59,8 +75,10 @@ def particle(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     settings.render_type = "HALO"
 
     # 颜色渐变：起始 / 结束颜色写入材质顶点色占位（渐变由色带节点在材质端衔接）
-    color_start = spec.get("color_start", [1.0, 0.6, 0.2, 1.0])
-    color_end = spec.get("color_end", [0.2, 0.4, 1.0, 1.0])
+    color_start = _require_color(
+        spec.get("color_start", [1.0, 0.6, 0.2, 1.0]), "particle.color_start")
+    color_end = _require_color(
+        spec.get("color_end", [0.2, 0.4, 1.0, 1.0]), "particle.color_end")
     ctx.bridge.push_event("effect.particle_color",
                           {"emitter": emitter.name,
                            "color_start": color_start, "color_end": color_end})
@@ -73,9 +91,9 @@ def particle(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def glow(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["object"])
-    spec = payload.get("glow", {})
-    intensity = float(spec.get("intensity", 1.5))
-    color = spec.get("color", [1.0, 0.7, 0.3, 1.0])
+    spec = _require_spec(payload, "glow")
+    intensity = as_float(spec.get("intensity", 1.5), "glow.intensity")
+    color = _require_color(spec.get("color", [1.0, 0.7, 0.3, 1.0]), "glow.color")
 
     # 2.1 发光材质
     mat = bpy.data.materials.new(name=f"Glow_{target.name}")
@@ -115,12 +133,14 @@ def glow(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def fluid(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["object"])
-    spec = payload.get("fluid", {})
+    spec = _require_spec(payload, "fluid")
     mod = target.modifiers.new(name="effect_fluid", type="FLUID")
     mod.settings.type = "FLOW"
     mod.settings.flow_behavior = "SMOKE"
-    mod.settings.flow_velocity = float(spec.get("velocity", 0.6))
-    mod.settings.use_collision = bool(spec.get("collision", True))
+    mod.settings.flow_velocity = as_float(spec.get("velocity", 0.6),
+                                         "fluid.velocity")
+    mod.settings.use_collision = as_bool(spec.get("collision", True),
+                                         "fluid.collision")
     return {"object": target.name, "shape": spec.get("shape", "smoke"),
             "velocity": mod.settings.flow_velocity,
             "collision": mod.settings.use_collision}
@@ -131,14 +151,15 @@ def fluid(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def deform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["object"])
-    spec = payload.get("deform", {})
-    amplitude = float(spec.get("amplitude", 0.2))
+    spec = _require_spec(payload, "deform")
+    amplitude = as_float(spec.get("amplitude", 0.2), "deform.amplitude")
     timing = spec.get("timing", [0, 24])
     if not isinstance(timing, (list, tuple)) or len(timing) < 2:
-        raise ValueError("形变时序 timing 至少需要起始 / 结束两个帧号")
-    start_frame, end_frame = float(timing[0]), float(timing[1])
+        raise ParamError("形变时序 timing 至少需要起始 / 结束两个帧号")
+    start_frame = as_float(timing[0], "deform.timing[0]")
+    end_frame = as_float(timing[1], "deform.timing[1]")
     if end_frame <= start_frame:
-        raise ValueError("形变时序结束帧必须大于起始帧")
+        raise ParamError("形变时序结束帧必须大于起始帧")
 
     # 晶格变形器 + 关键帧幅度
     lattice = bpy.data.lattices.new(name=f"{target.name}_Lattice")
@@ -161,10 +182,11 @@ def deform(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 5. 镜头匹配
 # ---------------------------------------------------------------------------
 def camera_match(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    spec = payload.get("camera", {})
-    trajectory = spec.get("trajectory", "push")  # push / pull / pan / orbit
-    distance = float(spec.get("distance", 3.0))
-    fov = float(spec.get("fov", 50.0))
+    spec = _require_spec(payload, "camera")
+    trajectory = require_str(spec.get("trajectory", "push"),
+                             "camera.trajectory")  # push / pull / pan / orbit
+    distance = as_float(spec.get("distance", 3.0), "camera.distance")
+    fov = as_float(spec.get("fov", 50.0), "camera.fov")
 
     cam_data = bpy.data.cameras.new(name="Match_Camera")
     cam = bpy.data.objects.new("Match_Camera", cam_data)
@@ -172,7 +194,7 @@ def camera_match(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     cam_data.lens = fov
     bpy.context.scene.camera = cam
 
-    end_frame = int(payload.get("end_frame", 24))
+    end_frame = as_int(payload.get("end_frame", 24), "end_frame")
     if trajectory == "push":
         cam.location = (0, distance + 2.0, 1.6)
         cam.keyframe_insert(data_path="location", frame=0)
@@ -211,14 +233,14 @@ _FIELD_TYPES = {
 
 def force_field(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     emitter = H.require_object(payload["object"])
-    kind = payload.get("kind", "FLOW")
+    kind = get_str(payload, "kind", "FLOW")
     if kind not in _FIELD_TYPES:
-        raise ValueError(f"不支持的力场类型: {kind}")
-    spec = payload.get("field", {})
+        raise ParamError(f"不支持的力场类型: {kind}")
+    spec = _require_spec(payload, "field")
     field = bpy.data.fields.new(name=f"{emitter.name}_Field", type=kind)
-    field.strength = float(spec.get("strength", 1.0))
+    field.strength = as_float(spec.get("strength", 1.0), "field.strength")
     if hasattr(field, "flow"):
-        field.flow = float(spec.get("flow", 1.0))
+        field.flow = as_float(spec.get("flow", 1.0), "field.flow")
     field_obj = bpy.data.objects.new(field.name, field)
     bpy.context.collection.objects.link(field_obj)
     H.set_transform(field_obj, payload)
@@ -233,16 +255,18 @@ _LIGHT_TYPES = {"POINT", "SUN", "SPOT", "AREA"}
 
 
 def light(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    ltype = payload.get("type", "POINT")
+    ltype = get_str(payload, "type", "POINT")
     if ltype not in _LIGHT_TYPES:
-        raise ValueError(f"不支持的灯光类型: {ltype}（POINT / SUN / SPOT / AREA）")
-    data = bpy.data.lights.new(name=payload.get("name", f"Light_{ltype}"), type=ltype)
-    data.energy = float(payload.get("energy", 100.0))
-    color = payload.get("color", [1.0, 1.0, 1.0, 1.0])
+        raise ParamError(f"不支持的灯光类型: {ltype}（POINT / SUN / SPOT / AREA）")
+    light_name = get_str(payload, "name", f"Light_{ltype}")
+    data = bpy.data.lights.new(name=light_name, type=ltype)
+    data.energy = as_float(payload.get("energy", 100.0), "energy")
+    color = _require_color(payload.get("color", [1.0, 1.0, 1.0, 1.0]), "color")
     if len(color) >= 3:
         data.color = tuple(color[:3])
     if ltype == "SPOT":
-        data.spot_size = float(payload.get("spot_size", math.radians(45.0)))
+        data.spot_size = as_float(payload.get("spot_size", math.radians(45.0)),
+                                  "spot_size")
     obj = bpy.data.objects.new(data.name, data)
     bpy.context.collection.objects.link(obj)
     H.set_transform(obj, payload)
@@ -256,8 +280,8 @@ def world(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     scene = bpy.context.scene
     world = scene.world or bpy.data.worlds.new("World")
     scene.world = world
-    color = payload.get("color", [0.05, 0.05, 0.05, 1.0])
-    strength = float(payload.get("strength", 1.0))
+    color = _require_color(payload.get("color", [0.05, 0.05, 0.05, 1.0]), "color")
+    strength = as_float(payload.get("strength", 1.0), "strength")
     applied_node = False
     try:
         world.use_nodes = True
@@ -279,9 +303,9 @@ def world(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def hair(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     target = H.require_object(payload["object"])
-    spec = payload.get("hair", {})
-    count = int(spec.get("count", 500))
-    length = float(spec.get("length", 0.15))
+    spec = _require_spec(payload, "hair")
+    count = as_int(spec.get("count", 500), "hair.count")
+    length = as_float(spec.get("length", 0.15), "hair.length")
     mod = target.modifiers.new(name="effect_hair", type="PARTICLE_SYSTEM")
     psys = mod.particle_system
     settings = psys.settings
@@ -299,8 +323,8 @@ def hair(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def motion_blur(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     scene = bpy.context.scene
-    enabled = bool(payload.get("enabled", True))
-    factor = float(payload.get("factor", 0.5))
+    enabled = get_bool(payload, "enabled", True)
+    factor = as_float(payload.get("factor", 0.5), "factor")
     ok = False
     try:
         scene.use_nodes = True
@@ -325,11 +349,11 @@ def motion_blur(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def trail(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     emitter = H.require_object(payload["object"])
-    spec = payload.get("trail", {})
-    length = float(spec.get("length", 0.6))
-    width = float(spec.get("width", 0.02))
-    color = spec.get("color", [0.4, 0.8, 1.0, 1.0])
-    segments = int(spec.get("segments", 5))
+    spec = _require_spec(payload, "trail")
+    length = as_float(spec.get("length", 0.6), "trail.length")
+    width = as_float(spec.get("width", 0.02), "trail.width")
+    color = _require_color(spec.get("color", [0.4, 0.8, 1.0, 1.0]), "trail.color")
+    segments = as_int(spec.get("segments", 5), "trail.segments")
 
     curve_data = bpy.data.curves.new(name=f"{emitter.name}_Trail", type="CURVE")
     curve_data.dimensions = "3D"
@@ -342,8 +366,9 @@ def trail(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     trail_obj = bpy.data.objects.new(curve_data.name, curve_data)
     bpy.context.collection.objects.link(trail_obj)
     trail_obj.parent = emitter
-    trail_obj.data.materials.append(_emission_material(f"{curve_data.name}_Mat",
-                                                       color, float(spec.get("strength", 2.0))))
+    trail_obj.data.materials.append(_emission_material(
+        f"{curve_data.name}_Mat", color,
+        as_float(spec.get("strength", 2.0), "trail.strength")))
     return {"emitter": emitter.name, "trail": trail_obj.name, "length": length}
 
 
@@ -352,19 +377,21 @@ def trail(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def shockwave(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     emitter = H.require_object(payload["object"])
-    spec = payload.get("shockwave", {})
+    spec = _require_spec(payload, "shockwave")
     timing = spec.get("timing", [0, 24])
     if not isinstance(timing, (list, tuple)) or len(timing) < 2:
-        raise ValueError("冲击波时序 timing 至少需要起始 / 结束两个帧号")
-    start_frame, end_frame = float(timing[0]), float(timing[1])
+        raise ParamError("冲击波时序 timing 至少需要起始 / 结束两个帧号")
+    start_frame = as_float(timing[0], "shockwave.timing[0]")
+    end_frame = as_float(timing[1], "shockwave.timing[1]")
     if end_frame <= start_frame:
-        raise ValueError("冲击波结束帧必须大于起始帧")
-    max_radius = float(spec.get("max_radius", 2.0))
-    color = spec.get("color", [0.7, 0.9, 1.0, 1.0])
+        raise ParamError("冲击波结束帧必须大于起始帧")
+    max_radius = as_float(spec.get("max_radius", 2.0), "shockwave.max_radius")
+    color = _require_color(spec.get("color", [0.7, 0.9, 1.0, 1.0]),
+                           "shockwave.color")
 
     ring_data = bpy.data.curves.new(name=f"{emitter.name}_Wave", type="CURVE")
     ring_data.dimensions = "3D"
-    ring_data.bevel_depth = float(spec.get("width", 0.03))
+    ring_data.bevel_depth = as_float(spec.get("width", 0.03), "shockwave.width")
     ring = ring_data.splines.new("POLY")
     ring.points.add(31)
     for i, pt in enumerate(ring.points):
@@ -374,8 +401,9 @@ def shockwave(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     wave_obj = bpy.data.objects.new(ring_data.name, ring_data)
     bpy.context.collection.objects.link(wave_obj)
     wave_obj.location = emitter.location
-    wave_obj.data.materials.append(_emission_material(f"{ring_data.name}_Mat",
-                                                     color, float(spec.get("strength", 3.0))))
+    wave_obj.data.materials.append(_emission_material(
+        f"{ring_data.name}_Mat", color,
+        as_float(spec.get("strength", 3.0), "shockwave.strength")))
     # 半径扩散 + 淡出关键帧
     wave_obj.scale = (0.01, 0.01, 0.01)
     wave_obj.keyframe_insert(data_path="scale", frame=start_frame)
@@ -390,18 +418,18 @@ def shockwave(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def shield(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     owner = H.require_object(payload["object"])
-    spec = payload.get("shield", {})
-    radius = float(spec.get("radius", 0.8))
-    color = spec.get("color", [0.3, 0.6, 1.0, 1.0])
+    spec = _require_spec(payload, "shield")
+    radius = as_float(spec.get("radius", 0.8), "shield.radius")
+    color = _require_color(spec.get("color", [0.3, 0.6, 1.0, 1.0]), "shield.color")
     bpy.ops.mesh.primitive_ico_sphere_add(radius=radius, subdivisions=2)
     shield_obj = bpy.context.active_object
     shield_obj.name = H.unique_name(f"{owner.name}_Shield")
     shield_obj.parent = owner
     mat = _emission_material(f"{shield_obj.name}_Mat", color,
-                             float(spec.get("strength", 1.2)),
-                             alpha=float(spec.get("alpha", 0.25)))
+                             as_float(spec.get("strength", 1.2), "shield.strength"),
+                             alpha=as_float(spec.get("alpha", 0.25), "shield.alpha"))
     shield_obj.data.materials.append(mat)
-    if spec.get("wireframe", True):
+    if as_bool(spec.get("wireframe", True), "shield.wireframe"):
         H.add_modifier(shield_obj, "WIREFRAME", "shield_wire")
     return {"owner": owner.name, "shield": shield_obj.name, "radius": radius}
 
@@ -412,18 +440,23 @@ def shield(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 def lightning(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     start = payload.get("start")
     end = payload.get("end")
-    if not (isinstance(start, (list, tuple)) and len(start) == 3):
-        raise ValueError("雷弧起点 start 需为 [X, Y, Z]")
-    if not (isinstance(end, (list, tuple)) and len(end) == 3):
-        raise ValueError("雷弧终点 end 需为 [X, Y, Z]")
-    segments = max(1, int(payload.get("segments", 8)))
-    spec = payload.get("lightning", {})
-    color = spec.get("color", [0.8, 0.9, 1.0, 1.0])
-    rng = random.Random(spec.get("seed", 7))
+    try:
+        start = require_vec3(start, "start")
+    except ParamError:
+        raise ParamError("雷弧起点 start 需为 [X, Y, Z]") from None
+    try:
+        end = require_vec3(end, "end")
+    except ParamError:
+        raise ParamError("雷弧终点 end 需为 [X, Y, Z]") from None
+    segments = max(1, as_int(payload.get("segments", 8), "segments"))
+    spec = _require_spec(payload, "lightning")
+    color = _require_color(spec.get("color", [0.8, 0.9, 1.0, 1.0]),
+                           "lightning.color")
+    rng = random.Random(as_int(spec.get("seed", 7), "lightning.seed"))
 
     curve_data = bpy.data.curves.new(name="Lightning_Arc", type="CURVE")
     curve_data.dimensions = "3D"
-    curve_data.bevel_depth = float(spec.get("width", 0.015))
+    curve_data.bevel_depth = as_float(spec.get("width", 0.015), "lightning.width")
     spline = curve_data.splines.new("POLY")
     spline.points.add(segments)
     for i, pt in enumerate(spline.points):
@@ -438,8 +471,9 @@ def lightning(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         pt.co = (x, y, z, 1.0)
     arc_obj = bpy.data.objects.new(curve_data.name, curve_data)
     bpy.context.collection.objects.link(arc_obj)
-    arc_obj.data.materials.append(_emission_material(f"{curve_data.name}_Mat",
-                                                     color, float(spec.get("strength", 5.0))))
+    arc_obj.data.materials.append(_emission_material(
+        f"{curve_data.name}_Mat", color,
+        as_float(spec.get("strength", 5.0), "lightning.strength")))
     return {"arc": arc_obj.name, "segments": segments}
 
 
@@ -448,14 +482,14 @@ def lightning(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def aura(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     owner = H.require_object(payload["object"])
-    spec = payload.get("aura", {})
-    radius = float(spec.get("radius", 0.6))
-    color = spec.get("color", [0.2, 0.9, 0.6, 1.0])
-    cycle = int(spec.get("cycle", 24))
+    spec = _require_spec(payload, "aura")
+    radius = as_float(spec.get("radius", 0.6), "aura.radius")
+    color = _require_color(spec.get("color", [0.2, 0.9, 0.6, 1.0]), "aura.color")
+    cycle = as_int(spec.get("cycle", 24), "aura.cycle")
 
     aura_data = bpy.data.curves.new(name=f"{owner.name}_Aura", type="CURVE")
     aura_data.dimensions = "3D"
-    aura_data.bevel_depth = float(spec.get("width", 0.02))
+    aura_data.bevel_depth = as_float(spec.get("width", 0.02), "aura.width")
     ring = aura_data.splines.new("POLY")
     ring.points.add(31)
     for i, pt in enumerate(ring.points):
@@ -465,8 +499,9 @@ def aura(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     aura_obj = bpy.data.objects.new(aura_data.name, aura_data)
     bpy.context.collection.objects.link(aura_obj)
     aura_obj.parent = owner
-    aura_obj.data.materials.append(_emission_material(f"{aura_data.name}_Mat",
-                                                      color, float(spec.get("strength", 2.0))))
+    aura_obj.data.materials.append(_emission_material(
+        f"{aura_data.name}_Mat", color,
+        as_float(spec.get("strength", 2.0), "aura.strength")))
     # 呼吸脉动：0 → 放大 → 回收
     for frame, scale_k in ((0, 1.0), (cycle // 2, 1.15), (cycle, 1.0)):
         aura_obj.scale = (scale_k, scale_k, scale_k)
@@ -479,10 +514,10 @@ def aura(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def debris(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     owner = H.require_object(payload["object"])
-    spec = payload.get("debris", {})
-    count = max(1, int(spec.get("count", 12)))
-    size = float(spec.get("size", 0.05))
-    rng = random.Random(spec.get("seed", 11))
+    spec = _require_spec(payload, "debris")
+    count = max(1, as_int(spec.get("count", 12), "debris.count"))
+    size = as_float(spec.get("size", 0.05), "debris.size")
+    rng = random.Random(as_int(spec.get("seed", 11), "debris.seed"))
     pieces: List[str] = []
     for i in range(count):
         bpy.ops.mesh.primitive_cube_add(size=size, location=owner.location)
@@ -498,7 +533,8 @@ def debris(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         pieces.append(piece.name)
     ctx.bridge.push_event("effect.debris_velocity",
                           {"owner": owner.name, "pieces": pieces,
-                           "speed": float(spec.get("speed", 3.0))})
+                           "speed": as_float(spec.get("speed", 3.0),
+                                             "debris.speed")})
     return {"owner": owner.name, "debris": pieces, "count": len(pieces)}
 
 
@@ -507,18 +543,19 @@ def debris(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 def spark(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     emitter = H.require_object(payload["object"])
-    spec = payload.get("spark", {})
-    count = int(spec.get("count", 120))
-    life = float(spec.get("life", 0.6))
-    speed = float(spec.get("speed", 3.0))
-    color = spec.get("color", [1.0, 0.85, 0.3, 1.0])
+    spec = _require_spec(payload, "spark")
+    count = as_int(spec.get("count", 120), "spark.count")
+    life = as_float(spec.get("life", 0.6), "spark.life")
+    speed = as_float(spec.get("speed", 3.0), "spark.speed")
+    color = _require_color(spec.get("color", [1.0, 0.85, 0.3, 1.0]),
+                           "spark.color")
     mod = emitter.modifiers.new(name="effect_spark", type="PARTICLE_SYSTEM")
     settings = mod.particle_system.settings
     settings.type = "EMITTER"
     settings.count = count
     settings.lifetime = int(life * ctx.config.get("animation_fps", 24))
     settings.normal_factor = speed
-    settings.particle_size = float(spec.get("size", 0.02))
+    settings.particle_size = as_float(spec.get("size", 0.02), "spark.size")
     settings.render_type = "HALO"
     ctx.bridge.push_event("effect.spark_color",
                           {"emitter": emitter.name, "color": color})
@@ -533,10 +570,10 @@ def camera_shake(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     cam = scene.camera
     if cam is None:
         raise KeyError("当前场景未设置摄像机")
-    amplitude = float(payload.get("amplitude", 0.08))
-    end_frame = int(payload.get("end_frame", 24))
-    frequency = int(payload.get("frequency", 3))
-    rng = random.Random(payload.get("seed", 5))
+    amplitude = as_float(payload.get("amplitude", 0.08), "amplitude")
+    end_frame = as_int(payload.get("end_frame", 24), "end_frame")
+    frequency = as_int(payload.get("frequency", 3), "frequency")
+    rng = random.Random(as_int(payload.get("seed", 5), "seed"))
     frames = list(range(0, end_frame + 1, max(1, end_frame // frequency)))
     base_loc = list(cam.location)
     base_rot = list(cam.rotation_euler)

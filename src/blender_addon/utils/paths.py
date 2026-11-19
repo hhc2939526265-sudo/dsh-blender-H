@@ -34,6 +34,7 @@ ROOT_DIR = _home_root()
 
 # 固定子目录名
 _SUBDIRS = {
+    "config": "config",
     "transfer": "transfer_cache",
     "render": "render_output",
     "logs": "logs",

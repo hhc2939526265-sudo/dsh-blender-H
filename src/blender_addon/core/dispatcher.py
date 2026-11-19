@@ -15,6 +15,7 @@ import traceback
 from typing import Any, Callable, Dict, List, Optional
 
 from . import protocol
+from ..utils.errors import ParamError
 
 
 class HandlerContext:
@@ -96,6 +97,11 @@ class Dispatcher:
             result["_elapsed_ms"] = round((time.time() - started) * 1000, 2)
             return protocol.make_result(cmd_id, cmd_type, protocol.STATUS_SUCCESS,
                                         result=result)
+        except ParamError as exc:
+            err = {"code": "E_PARAM", "message": str(exc),
+                   "detail": traceback.format_exc()}
+            return protocol.make_result(cmd_id, cmd_type, protocol.STATUS_FAILED,
+                                        error=err)
         except KeyError as exc:
             err = {"code": "E_PARAM", "message": f"参数缺失: {exc}",
                    "detail": traceback.format_exc()}

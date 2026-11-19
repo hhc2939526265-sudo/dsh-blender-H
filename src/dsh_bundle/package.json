@@ -1,7 +1,7 @@
 {
   "name": "dsh-blender-bridge",
   "version": "1.2.1",
-  "description": "把 Blender 接进 DSH：对话里直接查桥接状态、列出 113 条指令、执行建模/动画/材质/渲染命令（对接 DSH Blender Bridge 1.1.8 插件的本地 WebSocket 协议）。",
+  "description": "把 Blender 接进 DSH：对话里直接查桥接状态、列出 114 条指令、执行建模/动画/材质/渲染命令（对接 DSH Blender Bridge 1.1.9 插件的本地 WebSocket 协议）。",
   "icon": "icon.svg",
   "type": "module",
   "main": "index.js",
@@ -14,7 +14,7 @@
     "locale/",
     "README.md",
     "AUDIT.md",
-    "DSH_Blender_Bridge_Addon_v1.1.8-fixed.zip"
+    "DSH_Blender_Bridge_Addon_v1.1.9.zip"
   ],
   "exports": {
     ".": "./index.js",

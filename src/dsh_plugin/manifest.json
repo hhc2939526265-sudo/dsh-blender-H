@@ -1,7 +1,7 @@
 {
   "id": "com.dsh.blender.bridge",
   "name": "DSH Blender 双向桥接",
-  "version": "1.1.7",
+  "version": "1.1.9",
   "description": "多模态输入 → AI 解析 → Blender 3D 生产 → 迭代优化 → 渲染交付全闭环桥接插件",
   "author": "DSH-Blender Bridge Contributors",
   "entry": "index.html",

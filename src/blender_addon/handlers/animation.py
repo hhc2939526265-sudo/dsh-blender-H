@@ -70,9 +70,9 @@ def keyframe(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
         frame, values = item
         if not isinstance(values, (list, tuple)) or not values:
             raise ParamError(f"frames 第 {index} 项的数值需为非空数字数组")
-        if len(values) > len(attr):
+        if len(values) != len(attr):
             raise ParamError(
-                f"关键帧数值最多 {len(attr)} 个分量，收到 {len(values)} 个")
+                f"关键帧数值需为 {len(attr)} 个分量，收到 {len(values)} 个")
         values = require_float_list(values, f"frames[{index}][1]")
         for axis, value in enumerate(values):
             attr[axis] = value

@@ -8,6 +8,9 @@
   let app = null;
 
   function boot() {
+    // 宿主重复回调 onEnable / 调试场景重复触发 DOMContentLoaded 时，只初始化一次，
+    // 避免重复绑定按钮事件、重复创建 WebSocket 导致一次操作被执行多次。
+    if (app) return app;
     const store = new global.DSHStore();
     const client = new global.DSHBridgeClient(store);
     const transfer = new global.DSHTransfer(client, store);

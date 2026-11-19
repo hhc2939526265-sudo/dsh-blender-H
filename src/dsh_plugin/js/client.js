@@ -24,29 +24,52 @@
       this.backoff = 1;
       this.lastPong = Date.now();
       this.url = "";
+      // 连接代际号：每次新建连接自增，旧实例的 onopen/onclose 回调直接丢弃，
+      // 避免重连竞态下新旧两个 WebSocket 并存、旧连接关闭后又触发一次重连。
+      this._gen = 0;
     }
 
     // ------------------------------------------------------- 连接
     connect(host, port) {
       this.manualClose = false;
       this.url = `ws://${host}:${port}`;
+      // 先拆除上一条残留连接及其回调，防止重复建连与重复触发
+      this._teardownExisting();
       this._open();
+    }
+
+    _teardownExisting() {
+      if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+      this._stopHeartbeat();
+      if (this.ws) {
+        const old = this.ws;
+        this.ws = null;
+        try {
+          old.onopen = null; old.onmessage = null;
+          old.onerror = null; old.onclose = null;
+          old.close();
+        } catch (e) { /* ignore */ }
+      }
     }
 
     _open() {
       this._emitStatus("connecting", `正在连接 ${this.url}`);
+      const gen = ++this._gen;
+      let sock;
       try {
         // 配置了共享口令时，通过 Sec-WebSocket-Protocol 子协议末段携带
         const token = this.store.getSetting("auth_token") || "";
         const protocols = token ? [`dsh-bridge,${token}`] : undefined;
-        this.ws = new WebSocket(this.url, protocols);
+        sock = new WebSocket(this.url, protocols);
       } catch (e) {
         this._emitStatus("error", `连接创建失败: ${e.message}`);
-        this._scheduleReconnect();
+        if (gen === this._gen) this._scheduleReconnect();
         return;
       }
+      this.ws = sock;
 
-      this.ws.onopen = () => {
+      sock.onopen = () => {
+        if (gen !== this._gen) return; // 已被更新的连接取代
         this.backoff = 1;
         this.lastPong = Date.now();
         this._emitStatus("connected", "连接已建立，等待握手");
@@ -57,9 +80,12 @@
         this._startHeartbeat();
       };
 
-      this.ws.onmessage = (ev) => this._onMessage(ev.data);
-      this.ws.onerror = () => this._emitStatus("error", "WebSocket 错误");
-      this.ws.onclose = () => {
+      sock.onmessage = (ev) => { if (gen === this._gen) this._onMessage(ev.data); };
+      sock.onerror = () => { if (gen === this._gen) this._emitStatus("error", "WebSocket 错误"); };
+      sock.onclose = () => {
+        // 旧代际连接关闭：不更新状态、不调度重连，防止竞态重复建连
+        if (gen !== this._gen) return;
+        this.ws = null;
         this._stopHeartbeat();
         this._emitStatus("disconnected", "连接已断开");
         if (!this.manualClose) this._scheduleReconnect();
@@ -68,10 +94,8 @@
 
     disconnect() {
       this.manualClose = true;
-      this._stopHeartbeat();
-      if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-      if (this.ws) { try { this.ws.close(); } catch (e) { /* ignore */ } }
-      this.ws = null;
+      this._gen += 1; // 使现存回调全部失效
+      this._teardownExisting();
       this._rejectAllPending("连接已断开");
     }
 

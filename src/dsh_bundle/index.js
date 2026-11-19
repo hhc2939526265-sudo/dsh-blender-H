@@ -1,7 +1,7 @@
 /**
  * dsh-blender-bridge · Host 插件
  *
- * 给模型三个工具，把 Blender 端插件（DSH Blender Bridge 1.1.8）的本地 WebSocket
+ * 给模型三个工具，把 Blender 端插件（DSH Blender Bridge 1.1.9）的本地 WebSocket
  * 协议接到对话里：
  *   blender_status    读桥接状态（在线连接数 / 已注册命令数 / 插件版本）
  *   blender_commands  列出全部指令名（可按关键词过滤）

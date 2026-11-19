@@ -17,7 +17,22 @@
       this.pendingVideo = [];
       this.addonCache = [];
       this.selectedModule = null;
+      // 动作并发锁：同一类制作任务进行中再次点击 / 事件重入直接忽略，
+      // 防止一轮制作未结束又被重复触发，出现反复“开始制作”。
+      this._busy = Object.create(null);
     }
+
+    /** 尝试获取动作锁，成功返回 true；已在执行返回 false。 */
+    _acquire(action) {
+      if (this._busy[action]) {
+        this.store.addLog("WARNING", "上一轮任务尚未结束，请稍候再操作");
+        return false;
+      }
+      this._busy[action] = true;
+      return true;
+    }
+
+    _release(action) { this._busy[action] = false; }
 
     init() {
       this._bindTabs();
@@ -181,6 +196,7 @@
     async _buildCharacter() {
       if (!this._ensureConnected()) return;
       if (!this.pendingImages.length) { this.store.addLog("WARNING", "请先上传人物图片"); return; }
+      if (!this._acquire("character")) return;
       const btn = $("btn-build-character"); btn.disabled = true;
       try {
         const paths = [];
@@ -197,12 +213,13 @@
       } catch (e) {
         this._recordHistory("pipeline.character", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `角色生成失败: ${e.message}`);
-      } finally { btn.disabled = false; }
+      } finally { btn.disabled = false; this._release("character"); }
     }
 
     async _videoPipeline() {
       if (!this._ensureConnected()) return;
       if (!this.pendingVideo.length) { this.store.addLog("WARNING", "请先上传参考视频"); return; }
+      if (!this._acquire("video")) return;
       const btn = $("btn-mocap"); btn.disabled = true;
       try {
         const up = await this.transfer.uploadFile(this.pendingVideo[0]);
@@ -218,13 +235,14 @@
       } catch (e) {
         this._recordHistory("pipeline.video", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `视频复刻失败: ${e.message}`);
-      } finally { btn.disabled = false; }
+      } finally { btn.disabled = false; this._release("video"); }
     }
 
     async _nlDispatch() {
       if (!this._ensureConnected()) return;
       const prompt = $("nl-prompt").value.trim();
       if (!prompt) { this.store.addLog("WARNING", "请输入提示词"); return; }
+      if (!this._acquire("nl")) return;
       try {
         const res = await this.client.send("nl.dispatch", {
           prompt: prompt, dry_run: $("nl-dryrun").checked,
@@ -235,11 +253,12 @@
         this._recordHistory("nl.dispatch", { error: e.message }, "FAILED");
         $("nl-result").textContent = `错误: ${e.message}`;
         this.store.addLog("ERROR", e.message);
-      }
+      } finally { this._release("nl"); }
     }
 
     async _render() {
       if (!this._ensureConnected()) return;
+      if (!this._acquire("render")) return;
       try {
         await this.client.send("render.switch_engine", { engine: $("cfg-engine").value });
         await this.client.send("render.settings", {
@@ -252,11 +271,12 @@
       } catch (e) {
         this._recordHistory("render.execute", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `渲染失败: ${e.message}`);
-      }
+      } finally { this._release("render"); }
     }
 
     async _iterate() {
       if (!this._ensureConnected()) return;
+      if (!this._acquire("iterate")) return;
       try {
         const res = await this.client.send("pipeline.iterate", {
           iteration: (this.store.history.filter((h) => h.cmd === "pipeline.iterate").length) + 1,
@@ -266,7 +286,7 @@
       } catch (e) {
         this._recordHistory("pipeline.iterate", { error: e.message }, "FAILED");
         this.store.addLog("ERROR", `回传失败: ${e.message}`);
-      }
+      } finally { this._release("iterate"); }
     }
 
     // ------------------------------------------------------- 插件生态
@@ -384,6 +404,7 @@
         catch (e) { this.store.addLog("ERROR", "参数 JSON 解析失败: " + e.message); return; }
       }
       const mode = $("addon-op-mode").value;
+      if (!this._acquire("addon_invoke")) return;
       try {
         const res = await this.client.send("addon.invoke", { operator, params, mode });
         $("addon-invoke-result").textContent = JSON.stringify(res, null, 2);
@@ -393,7 +414,7 @@
         this._recordHistory("addon.invoke", { error: e.message }, "FAILED");
         $("addon-invoke-result").textContent = `错误: ${e.message}`;
         this.store.addLog("ERROR", `算子调用失败: ${e.message}`);
-      }
+      } finally { this._release("addon_invoke"); }
     }
 
     _esc(text) {

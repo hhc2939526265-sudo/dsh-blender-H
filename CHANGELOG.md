@@ -2,6 +2,23 @@
 
 本项目遵循 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/) 提交规范，版本号采用 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.1.9] - 2026-11-19
+
+### Fixed
+- **P1 对象失效 RNA**：`require_object` / `list_objects` 解析后复核 RNA 可读，失效句柄抛明确参数错误；`mesh.join` 执行前二次剔除已失效成员，避免 `StructRNA of type Object has been removed`。
+- **P2 曲线 / 类型错配**：挤出 / 环切 / 内插面 / 法线 / 焊接 / UV / 分离 / 布尔等网格指令执行前校验 `MESH` 类型；`mesh.join` 自动跳过曲线 / 骨架 / 灯光 / 相机并在回执列出；新增 `mesh.convert` 将曲线 / 文字 / 元球 / 曲面转为网格。
+- **P3 连接竞态**：前端连接代际号隔离新旧 WebSocket，旧实例回调不再触发重连；新建连接前先拆除残留连接与定时器，消除一轮一建断与多连接并存；握手阶段 `10054` 归为网络层告警。
+- **重复触发制作**：前端各类制作动作增加并发锁，上一轮未结束再次触发直接忽略；`boot()` 只初始化一次，避免宿主重复回调导致事件重复绑定、一次操作被执行多次。
+- **动画关键帧校验**：关键帧数值分量数与位置 / 旋转 / 缩放严格对齐，分量不符提前抛参数错误。
+
+### Changed
+- **建模还原度**：角色装配消费 AI 规格的肩宽 / 髋宽 / 躯干长 / 腿长 / 脸型 / 发型参数；皮肤 / 上衣 / 头发按图片分区取色；Mock 兜底按图片路径确定性生成差异化体型；整体平滑着色。
+- 指令总数 113 → 114（新增 `mesh.convert`）；单元测试 78 个全部通过。
+
+### 保留项
+- 高精度人体重建仍依赖外部推理后端（`ai.provider=http`）；本地 Mock 仅生成拓扑规范、可二次编辑的占位资产。
+- 真机 Blender 4.2 LTS ~ 5.2 算子 / 解算行为未逐一回归，5.3.0 已真机验证主链路。
+
 ## [1.1.8] - 2026-11-19
 
 > 本轮在 Blender **5.3.0** 真机上完成审计、修复与回归，完整证据与复现脚本见 [AUDIT.md](AUDIT.md)。
@@ -158,7 +175,9 @@
 - 稳定性：全链路异常捕获、四级日志、指令校验、分批内存管理、闲置缓存释放。
 - 工程化：完整文档（安装手册 / 使用说明书 / 接口文档）、3 个演示案例、一键打包脚本、README / LICENSE / .gitignore。
 
-[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.7...HEAD
+[Unreleased]: https://github.com/hhc2939526265-sudo/dsh-blender-H/compare/v1.1.9...HEAD
+[1.1.9]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.9
+[1.1.8]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.8
 [1.1.7]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.7
 [1.1.6]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.6
 [1.1.5]: https://github.com/hhc2939526265-sudo/dsh-blender-H/releases/tag/v1.1.5

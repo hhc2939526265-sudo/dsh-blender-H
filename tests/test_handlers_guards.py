@@ -48,6 +48,15 @@ class _Obj:
         self.rotation_euler = [0.0, 0.0, 0.0]
         self.scale = [1.0, 1.0, 1.0]
         self.data = types.SimpleNamespace(materials=[])
+        self.animation_data = None
+
+    def keyframe_insert(self, data_path="", frame=0, **kwargs):
+        """桩：模拟骨骼 / 对象关键帧写入，不做真实动画曲线。"""
+        return None
+
+    def select_set(self, state=True):
+        """桩：模拟对象选中状态。"""
+        self.select_state = state
 
 
 class _MeshObj(_Obj):
@@ -105,6 +114,38 @@ class TestModelingGuards(unittest.TestCase):
     def test_curve_empty_points_rejected(self):
         with self.assertRaises(ValueError):
             modeling.curve({"points": []}, None)
+
+    def _register(self, obj):
+        bpy.data.objects[obj.name] = obj
+        self.addCleanup(lambda: bpy.data.objects.pop(obj.name, None))
+
+    def test_join_rejects_curve_target(self):
+        self._register(_Obj("Trail", "CURVE"))
+        with self.assertRaises(ValueError):
+            modeling.join({"object": "Trail", "objects": []}, None)
+
+    def test_extrude_rejects_curve(self):
+        self._register(_Obj("Trail", "CURVE"))
+        with self.assertRaises(ValueError):
+            modeling.extrude({"object": "Trail"}, None)
+
+    def test_convert_rejects_light(self):
+        self._register(_Obj("Lamp", "LIGHT"))
+        with self.assertRaises(ValueError):
+            modeling.convert({"object": "Lamp"}, None)
+
+    def test_join_skips_non_mesh_members(self):
+        target = _MeshObj("Body")
+        member = _MeshObj("Armor")
+        curve = _Obj("Trail", "CURVE")
+        self._register(target)
+        self._register(member)
+        self._register(curve)
+        res = modeling.join({"object": "Body",
+                             "objects": ["Armor", "Trail"]}, None)
+        self.assertEqual(res["joined"], ["Armor"])
+        self.assertEqual(len(res["skipped"]), 1)
+        self.assertEqual(res["skipped"][0]["type"], "CURVE")
 
 
 class TestAnimationGuards(unittest.TestCase):
@@ -356,7 +397,7 @@ class TestRegistry(unittest.TestCase):
         ]
         for cmd in expected:
             self.assertIn(cmd, names)
-        self.assertEqual(len([n for n in names if n.startswith("mesh.")]), 35)
+        self.assertEqual(len([n for n in names if n.startswith("mesh.")]), 36)
         self.assertEqual(len([n for n in names if n.startswith("anim.")]), 17)
         self.assertEqual(len([n for n in names if n.startswith("material.")]), 10)
         self.assertEqual(len([n for n in names if n.startswith("effect.")]), 18)

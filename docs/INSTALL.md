@@ -1,6 +1,6 @@
 # 安装部署手册
 
-> 适用版本：DSH Blender Bridge 1.1.7　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
+> 适用版本：DSH Blender Bridge 1.1.9　｜　兼容 Blender 4.2 LTS ~ 5.3　｜　Windows / macOS / Linux
 
 ## 一、环境要求
 

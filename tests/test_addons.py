@@ -6,13 +6,32 @@ import types
 import os
 import unittest
 
-# 未安装 Blender 的环境下注入空 bpy 桩，使模块可导入；纯函数不触达 bpy
-sys.modules.setdefault("bpy", types.ModuleType("bpy"))
+# 未安装 Blender 的环境下注入最小 bpy 桩（与 test_handlers_guards 同构），
+# 避免测试发现顺序不同导致 bpy 模块被空桩污染。
+bpy = types.ModuleType("bpy")
+bpy.app = types.SimpleNamespace(version=(4, 2, 0))
+bpy.context = types.SimpleNamespace(
+    view_layer=types.SimpleNamespace(objects=types.SimpleNamespace(active=None)),
+    preferences=types.SimpleNamespace(addons=[]))
+bpy.data = types.SimpleNamespace(objects={}, materials={}, actions=[],
+                                  lights=[], fields=[], node_groups={})
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "blender_addon"))
 
-from handlers import addons  # noqa: E402
-from handlers import addon_catalog  # noqa: E402
+class _StubOps:
+    def __getattr__(self, name):
+        return _StubOps()
+
+    def __call__(self, *args, **kwargs):
+        return None
+
+
+bpy.ops = _StubOps()
+sys.modules["bpy"] = bpy
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from blender_addon.handlers import addons  # noqa: E402
+from blender_addon.handlers import addon_catalog  # noqa: E402
 
 
 class TestClassify(unittest.TestCase):

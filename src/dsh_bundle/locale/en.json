@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Blender Bridge",
-    "description": "Drive the local Blender from chat: check bridge status, list all 113 commands, and execute modeling / animation / material / effect / render commands. Start the bridge service first from the DSH Bridge sidebar panel in Blender (port 8765)."
+    "description": "Drive the local Blender from chat: check bridge status, list all 114 commands, and execute modeling / animation / material / effect / render commands. Start the bridge service first from the DSH Bridge sidebar panel in Blender (port 8765)."
   }
 }

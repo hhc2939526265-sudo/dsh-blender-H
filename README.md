@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Blender](https://img.shields.io/badge/Blender-4.2%20LTS%20~%205.3-green.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.1.8-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.9-orange.svg)](CHANGELOG.md)
 
 ---
 
@@ -35,12 +35,12 @@
 | V12 | 参数错误一律 `E_EXEC` + Blender C API `SystemError` | 新增 `utils/errors.py`，统一 `E_PARAM` 中文提示 |
 | V13 | **DSH 桌面应用 Origin `dsh-app://app` 被 403** → 状态胶囊永远灰 | 白名单支持完整 Origin + 默认放行 + 旧配置自动迁移 |
 
-**回归数据（113 条指令，Blender 5.3 真机）**
+**回归数据（114 条指令，Blender 5.3 真机）**
 
 - 空 payload：修复前 25 成功 / 88 失败（含 1 条 `E_EXEC`）→ 修复后 **28 / 85 / 0 E_EXEC / 0 崩溃**
 - 错误类型 payload fuzz（两轮 226 条）：修复前约 70 条 `SystemError` → 修复后 **0 E_EXEC**
 - 协议 7/7、传输 10/10、纯 Python 回归 **39/39**、真实工作流冒烟 13 成功 / 7 预期失败
-- DSH 端到端：`blender_status` 返回 `running:true, addon_version:1.1.8, command_count:113`
+- DSH 端到端：`blender_status` 返回 `running:true, addon_version:1.1.9, command_count:114`
 
 > 旧版 `src/dsh_plugin/` 使用自创 `manifest.json` 格式并依赖不存在的 `window.DSH` 宿主 API，**无法被 DSH 插件管理器加载**。
 > 1.1.8 起提供可用的原生 bundle [src/dsh_bundle/](src/dsh_bundle/)（3 个工具 + 状态胶囊）；`src/dsh_plugin/` 保留作历史参考，不再维护。
@@ -106,7 +106,7 @@ dsh-blender-H/
 git clone https://github.com/hhc2939526265-sudo/dsh-blender-H.git
 ```
 
-1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.8.zip` →
+1. **安装 Blender Addon**：Release 下载 `DSH_Blender_Bridge_Addon_v1.1.9.zip` →
    Blender 偏好设置 → 插件 → 从磁盘安装 → 勾选启用 → 侧边栏 `DSH Bridge` 启动服务。
 2. **安装 DSH 插件**：把仓库里的 [src/dsh_bundle/](src/dsh_bundle/) 以「本地安装」指向该目录
    （`plugin_manager(action: "install_bundle", target: "<src/dsh_bundle 绝对路径>")`），刷新页面。
@@ -138,7 +138,7 @@ powershell -ExecutionPolicy Bypass -File scripts/package_all.ps1
 
 ## 已知限制
 
-- **真机覆盖范围**：1.1.8 已在 Blender **5.3.0**（Windows）真机跑通 113 条指令、协议 / 传输用例与四个渲染导出链路；4.2 LTS ~ 5.2 仅由 `compat/` 层静态兜底，未逐一真机验证。
+- **真机覆盖范围**：1.1.8 已在 Blender **5.3.0**（Windows）真机跑通 114 条指令、协议 / 传输用例与四个渲染导出链路；4.2 LTS ~ 5.2 仅由 `compat/` 层静态兜底，未逐一真机验证。
 - **执行超时不可中断**：指令在 Blender 主线程顺序落地，主线程不可抢占；`command_timeout` 仅控制排队等待时长，正在执行的指令无法中途取消。
 - **AI 为可插拔抽象**：默认 Mock 离线兜底；真实人物重建 / 动作复刻 / 特效还原度取决于接入的外部推理服务。
 - **默认无口令**：桥接默认只监听回环且无 `auth_token`，本机任意 `localhost` 页面可驱动 Blender；对不受信环境请设口令（见 [AUDIT.md](AUDIT.md) 第 6 节）。

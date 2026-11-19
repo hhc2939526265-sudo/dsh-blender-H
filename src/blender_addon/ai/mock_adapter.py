@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from typing import Any, Dict, List, Optional
@@ -59,21 +60,31 @@ class MockAIProvider(BaseAIProvider):
                          ) -> Dict[str, Any]:
         params = params or {}
         quality = params.get("quality", "medium")
-        # 依据图片数量做保守比例估计（多张照片取均值占位，外部服务接入后替换）
         photo_count = max(1, len(image_paths))
+        # 依据图片路径做确定性哈希，在合理区间内生成差异化体型 / 脸型 / 发型占位，
+        # 避免每张图都输出同一具标准人体；高精度重建仍以接入外部推理后端为准。
+        digest = hashlib.md5("|".join(image_paths).encode("utf-8")).hexdigest()
+        seed = int(digest[:8], 16)
+        height = round(1.60 + (seed % 16) / 100.0, 2)          # 1.60 ~ 1.75 m
+        shoulder = round(0.40 + ((seed >> 4) % 10) / 100.0, 3)
+        hip = round(0.27 + ((seed >> 8) % 8) / 100.0, 3)
+        torso = round(0.52 + ((seed >> 12) % 7) / 100.0, 3)
+        leg = round(0.50 + ((seed >> 16) % 6) / 100.0, 3)
+        face_shapes = ["oval", "round", "square", "long", "heart", "normal"]
+        hair_styles = ["short", "long", "ponytail", "bun"]
         return {
             "quality": quality,
             "source_images": list(image_paths),
             "proportions": {
-                "height": 1.75,
-                "shoulder_width": 0.45,
-                "hip_width": 0.30,
-                "torso_length": 0.55,
-                "leg_ratio": 0.52,
+                "height": height,
+                "shoulder_width": shoulder,
+                "hip_width": hip,
+                "torso_length": torso,
+                "leg_ratio": leg,
                 "photo_count": photo_count,
             },
             "features": {
-                "face": "oval",
+                "face": face_shapes[seed % len(face_shapes)],
                 "eyes": "normal",
                 "nose": "normal",
                 "mouth": "normal",
@@ -87,7 +98,8 @@ class MockAIProvider(BaseAIProvider):
                 {"part": "shoes", "category": "hard_surface",
                  "color": [0.08, 0.08, 0.09], "roughness": 0.4},
             ],
-            "hair": {"style": "short", "color": [0.05, 0.04, 0.03]},
+            "hair": {"style": hair_styles[(seed >> 20) % len(hair_styles)],
+                     "color": [0.05, 0.04, 0.03]},
             "skin_color": [0.82, 0.66, 0.55],
             "shape_keys": FACE_SHAPE_KEYS,
         }

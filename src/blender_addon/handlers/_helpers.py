@@ -38,32 +38,45 @@ def get_object(name: Any, param: str = "object"):
 
 
 def require_object(name: Any, param: str = "object"):
-    """按名称取对象；``active`` 解析为当前活动对象，不存在则抛 KeyError。"""
+    """按名称取对象；``active`` 解析为当前活动对象。
+
+    不存在或 RNA 已失效（对象被删除 / 场景重建后旧句柄残留）均抛 KeyError，
+    避免后续算子触碰失效指针导致 ``StructRNA of type Object has been removed``。
+    """
     _check_object_name(name, param)
     if _is_active_ref(name):
         obj = bpy.context.view_layer.objects.active
         if obj is None:
             raise KeyError("当前没有活动对象，请先在场景中选中目标对象")
+        if not is_object_alive(obj):
+            raise KeyError("活动对象引用已失效，请重新选择目标对象")
         return obj
     obj = bpy.data.objects.get(name)
     if obj is None:
         raise KeyError(f"对象不存在: {name}")
+    if not is_object_alive(obj):
+        raise KeyError(f"对象「{name}」引用已失效（可能已被删除或场景已重建），请重新选择")
     return obj
 
 
 def list_objects(names: Any, param: str = "objects") -> List[bpy.types.Object]:
-    """按名称列表解析对象，过滤不存在项；空列表沿用当前选中对象。"""
+    """按名称列表解析对象，过滤不存在 / 已失效项；空列表沿用当前选中对象。"""
     if names is None:
-        return list(bpy.context.selected_objects)
+        return [o for o in bpy.context.selected_objects if is_object_alive(o)]
     items = require_list(names, param)
     if not items:
-        return list(bpy.context.selected_objects)
+        return [o for o in bpy.context.selected_objects if is_object_alive(o)]
     for index, item in enumerate(items):
         if not isinstance(item, str):
             raise ParamError(
                 f"{param} 第 {index} 项需为对象名称字符串，收到 "
                 f"{type(item).__name__}")
-    return [o for item in items if (o := bpy.data.objects.get(item)) is not None]
+    result: List[bpy.types.Object] = []
+    for item in items:
+        obj = bpy.data.objects.get(item)
+        if obj is not None and is_object_alive(obj):
+            result.append(obj)
+    return result
 
 
 def get_datablock(collection: Any, name: Any, param: str):
@@ -99,8 +112,39 @@ def unique_name(base: Any, param: str = "name") -> str:
     return f"{base}.{idx:03d}"
 
 
+# 仅支持网格对象的构造性修改器（曲线 / 其他类型对象上 Blender 会拒绝应用）
+MESH_ONLY_MODIFIERS = frozenset({
+    "BOOLEAN", "BEVEL", "SOLIDIFY", "REMESH", "SUBSURF", "DECIMATE",
+    "SCREW", "WIREFRAME", "DISPLACE", "EDGE_SPLIT", "SHRINKWRAP",
+})
+
+
+def is_object_alive(obj: Any) -> bool:
+    """判断对象 RNA 是否仍然有效（被删除 / 解引用后访问会抛 ReferenceError）。"""
+    if obj is None:
+        return False
+    try:
+        _ = obj.name
+        return True
+    except (ReferenceError, AttributeError, KeyError):
+        return False
+
+
+def require_mesh(obj: Any, action: str = "该操作") -> bpy.types.Object:
+    """要求对象为网格类型，否则抛 ParamError 并提示先转换为网格。"""
+    if not is_object_alive(obj):
+        raise KeyError("对象已被删除或引用失效，请重新选择目标对象")
+    if obj.type != "MESH":
+        raise ParamError(
+            f"对象「{obj.name}」类型为 {obj.type}，{action} 仅支持网格对象；"
+            f"请先调用 mesh.convert 转换为网格后再操作")
+    return obj
+
+
 def add_modifier(obj: bpy.types.Object, mod_type: str, name: str):
-    """添加修改器并返回。"""
+    """添加修改器并返回；网格专属修改器在非网格对象上提前抛 ParamError。"""
+    if mod_type in MESH_ONLY_MODIFIERS:
+        require_mesh(obj, f"修改器 {mod_type}")
     return obj.modifiers.new(name=name, type=mod_type)
 
 

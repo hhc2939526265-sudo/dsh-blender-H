@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Blender 桥接",
-    "description": "把本机 Blender 接到对话里：查桥接状态、列出 113 条指令、直接执行建模/动画/材质/特效/渲染命令。需先在 Blender 的 DSH Bridge 侧栏面板启动服务（端口 8765）。"
+    "description": "把本机 Blender 接到对话里：查桥接状态、列出 114 条指令、直接执行建模/动画/材质/特效/渲染命令。需先在 Blender 的 DSH Bridge 侧栏面板启动服务（端口 8765）。"
   }
 }

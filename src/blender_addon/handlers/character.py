@@ -68,25 +68,59 @@ def _join_objects(objects: List[bpy.types.Object], name: str) -> bpy.types.Objec
 
 def _average_image_color(image_path: str) -> Optional[List[float]]:
     """从图片像素提取平均 RGBA 颜色（无第三方依赖，走 Blender 图像 API）。"""
+    return _region_image_color(image_path, 0.0, 1.0)
+
+
+def _region_image_color(image_path: str, vmin: float = 0.0,
+                        vmax: float = 1.0) -> Optional[List[float]]:
+    """提取图片指定纵向区间（0=底，1=顶）的平均 RGBA，用于分区取色（皮肤 / 服装 / 头发）。"""
     if not image_path:
         return None
     try:
         image = bpy.data.images.load(image_path, check_existing=True)
+        width, height = image.size[:2]
         pixels = list(image.pixels)
-        if not pixels:
+        bpy.data.images.remove(image)
+        if not pixels or width == 0 or height == 0:
             return None
         channel = 4
+        row_start = int(height * max(0.0, min(1.0, vmin)))
+        row_end = max(row_start + 1, int(height * max(0.0, min(1.0, vmax))))
         r = g = b = a = 0.0
-        n = len(pixels) // channel
-        for i in range(n):
-            r += pixels[i * channel]
-            g += pixels[i * channel + 1]
-            b += pixels[i * channel + 2]
-            a += pixels[i * channel + 3]
-        bpy.data.images.remove(image)
+        n = 0
+        for y in range(row_start, min(row_end, height)):
+            for x in range(width):
+                i = (y * width + x) * channel
+                r += pixels[i]
+                g += pixels[i + 1]
+                b += pixels[i + 2]
+                a += pixels[i + 3]
+                n += 1
+        if n == 0:
+            return None
         return [r / n, g / n, b / n, a / n]
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    """数值区间收敛，避免规格异常导致部件尺寸离谱。"""
+    return max(low, min(high, value))
+
+
+# 脸型 → 头部三轴缩放占位映射（接入高精度后端后由后端直接给头部网格）
+_FACE_SHAPE_SCALE = {
+    "oval": (1.00, 0.92, 1.05), "round": (1.05, 1.00, 0.95),
+    "square": (1.05, 0.95, 1.00), "long": (0.92, 0.90, 1.12),
+    "heart": (1.00, 0.95, 1.00), "normal": (1.00, 0.95, 1.00),
+}
+
+# 发型 → 发片三轴缩放占位映射
+_HAIR_STYLE_SCALE = {
+    "short": (1.05, 1.00, 0.55), "long": (1.08, 1.05, 1.10),
+    "ponytail": (1.00, 1.00, 1.00), "bun": (1.00, 1.00, 0.70),
+    "bald": (0.01, 0.01, 0.01),
+}
 
 
 def _create_material(name: str, color: List[float], roughness: float,
@@ -224,33 +258,43 @@ def build(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     proportions = spec.get("proportions", {})
     height = float(proportions.get("height", 1.75))
     scale_k = height / 1.75
+    # 体型系数：以标准人体为基准，按 AI 解析的肩宽 / 髋宽 / 躯干长 / 腿长收敛缩放
+    shoulder_f = _clamp(float(proportions.get("shoulder_width", 0.45)) / 0.45, 0.7, 1.4)
+    hip_f = _clamp(float(proportions.get("hip_width", 0.30)) / 0.30, 0.7, 1.4)
+    torso_f = _clamp(float(proportions.get("torso_length", 0.55)) / 0.55, 0.75, 1.3)
+    leg_f = _clamp(float(proportions.get("leg_ratio", 0.52)) / 0.52, 0.8, 1.25)
+    features = spec.get("features", {})
+    face_key = str(features.get("face", "normal")).lower()
+    fx, fy, fz = _FACE_SHAPE_SCALE.get(face_key, (1.0, 0.95, 1.0))
 
-    # 1) 装配身体部件
+    # 1) 装配身体部件（尺寸 / 位置随体型规格驱动，而非固定占位）
     parts: List[bpy.types.Object] = []
     parts.append(_add_part("cube", "pelvis", (0, 0, 0.92 * scale_k),
-                           (0.16, 0.10, 0.12), quality))
+                           (0.16 * hip_f, 0.10, 0.12), quality))
     parts.append(_add_part("cube", "torso", (0, 0, 1.18 * scale_k),
-                           (0.17, 0.11, 0.22), quality))
+                           (0.17 * shoulder_f, 0.11, 0.22 * torso_f), quality))
     parts.append(_add_part("sphere", "head", (0, 0, 1.52 * scale_k),
-                           (0.10, 0.09, 0.12), quality))
-    parts.append(_add_part("cylinder", "upper_arm_L", (-0.27, 0, 1.24 * scale_k),
+                           (0.10 * fx, 0.09 * fy, 0.12 * fz), quality))
+    parts.append(_add_part("cylinder", "upper_arm_L", (-0.27 * shoulder_f, 0, 1.24 * scale_k),
                            (0.05, 0.05, 0.16), quality))
-    parts.append(_add_part("cylinder", "upper_arm_R", (0.27, 0, 1.24 * scale_k),
+    parts.append(_add_part("cylinder", "upper_arm_R", (0.27 * shoulder_f, 0, 1.24 * scale_k),
                            (0.05, 0.05, 0.16), quality))
-    parts.append(_add_part("cylinder", "forearm_L", (-0.29, 0, 1.0 * scale_k),
+    parts.append(_add_part("cylinder", "forearm_L", (-0.29 * shoulder_f, 0, 1.0 * scale_k),
                            (0.04, 0.04, 0.14), quality))
-    parts.append(_add_part("cylinder", "forearm_R", (0.29, 0, 1.0 * scale_k),
+    parts.append(_add_part("cylinder", "forearm_R", (0.29 * shoulder_f, 0, 1.0 * scale_k),
                            (0.04, 0.04, 0.14), quality))
-    parts.append(_add_part("cylinder", "thigh_L", (-0.11, 0, 0.62 * scale_k),
-                           (0.07, 0.07, 0.22), quality))
-    parts.append(_add_part("cylinder", "thigh_R", (0.11, 0, 0.62 * scale_k),
-                           (0.07, 0.07, 0.22), quality))
-    parts.append(_add_part("cylinder", "shin_L", (-0.11, 0, 0.3 * scale_k),
-                           (0.055, 0.055, 0.18), quality))
-    parts.append(_add_part("cylinder", "shin_R", (0.11, 0, 0.3 * scale_k),
-                           (0.055, 0.055, 0.18), quality))
+    parts.append(_add_part("cylinder", "thigh_L", (-0.11 * hip_f, 0, 0.62 * scale_k),
+                           (0.07, 0.07, 0.22 * leg_f), quality))
+    parts.append(_add_part("cylinder", "thigh_R", (0.11 * hip_f, 0, 0.62 * scale_k),
+                           (0.07, 0.07, 0.22 * leg_f), quality))
+    parts.append(_add_part("cylinder", "shin_L", (-0.11 * hip_f, 0, 0.3 * scale_k),
+                           (0.055, 0.055, 0.18 * leg_f), quality))
+    parts.append(_add_part("cylinder", "shin_R", (0.11 * hip_f, 0, 0.3 * scale_k),
+                           (0.055, 0.055, 0.18 * leg_f), quality))
 
     body = _join_objects(parts, H.unique_name("Character_Body"))
+    # 整体平滑着色，减少占位部件的棱角感
+    version_compat.shade_smooth(body)
 
     # 2) 精度细分
     sub_level = _QUALITY_SUBSURF[quality]
@@ -270,44 +314,59 @@ def build(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
     # 4) 面部形状键
     key_count = _add_shape_keys(body, spec.get("shape_keys", []))
 
-    # 5) 皮肤材质（优先从首图提取平均色；仅读取传输目录内图片，防任意本地文件加载）
+    # 5) 皮肤 / 服装 / 头发取色：仅读取传输目录内图片，防任意本地文件加载；
+    #    整图均值作皮肤，中部区间作上衣参考色，顶部条带作头发参考色，规格色兜底。
     skin_color = spec.get("skin_color", [0.82, 0.66, 0.55, 1.0])
     transfer_dir = paths.subdir("transfer")
     safe_images = [p for p in image_paths
                    if paths.is_within(transfer_dir, os.path.abspath(p))]
-    if safe_images:
-        avg = _average_image_color(safe_images[0])
+    sample_image = safe_images[0] if safe_images else ""
+    if sample_image:
+        avg = _average_image_color(sample_image)
         if avg:
             skin_color = avg
     skin_mat = _create_material("Skin_Mat", skin_color, roughness=0.55)
     body.data.materials.append(skin_mat)
 
-    # 6) 服装分层（独立网格 + 独立材质）
+    # 6) 服装分层（独立网格 + 独立材质，宽度随肩 / 髋体型系数）
     clothing_objs: List[str] = []
     for index, cloth in enumerate(spec.get("clothing", [])):
         part = cloth.get("part", f"cloth_{index}")
         col = cloth.get("color", [0.3, 0.3, 0.3, 1.0])
+        # 上衣参考图片中部主色，下装参考下部主色
+        if sample_image and part in ("top", "bottom"):
+            region = _region_image_color(
+                sample_image, 0.25, 0.6) if part == "top" else _region_image_color(
+                sample_image, 0.05, 0.3)
+            if region:
+                col = region
         mat = _create_material(f"Cloth_{part}", col,
                                roughness=float(cloth.get("roughness", 0.8)),
                                metallic=float(cloth.get("metallic", 0.0)))
         if part == "top":
             obj = _add_part("cube", f"Cloth_Top", (0, 0, 1.18 * scale_k),
-                            (0.185, 0.125, 0.20), quality)
+                            (0.185 * shoulder_f, 0.125, 0.20 * torso_f), quality)
         elif part == "bottom":
             obj = _add_part("cube", f"Cloth_Bottom", (0, 0, 0.78 * scale_k),
-                            (0.17, 0.115, 0.18), quality)
+                            (0.17 * hip_f, 0.115, 0.18 * leg_f), quality)
         else:
             obj = _add_part("cube", f"Cloth_{part}", (0, 0, 0.1 * scale_k),
                             (0.08, 0.12, 0.05), quality)
         obj.data.materials.append(mat)
         clothing_objs.append(obj.name)
 
-    # 7) 发型面片（压扁球体置于头顶）
+    # 7) 发型面片（压扁球体置于头顶，样式由 AI 规格映射到发片比例）
+    hair_spec = spec.get("hair", {}) or {}
+    hair_style = str(hair_spec.get("style", "short")).lower()
+    hx, hy, hz = _HAIR_STYLE_SCALE.get(hair_style, (1.05, 1.0, 0.55))
     hair = _add_part("sphere", "Hair", (0, -0.01, 1.6 * scale_k),
-                     (0.105, 0.095, 0.07), quality)
-    hair_mat = _create_material("Hair_Mat",
-                                spec.get("hair", {}).get("color", [0.05, 0.04, 0.03, 1]),
-                                roughness=0.7)
+                     (0.105 * hx, 0.095 * hy, 0.07 * hz), quality)
+    hair_color = hair_spec.get("color", [0.05, 0.04, 0.03, 1])
+    if sample_image:
+        top_strip = _region_image_color(sample_image, 0.75, 1.0)
+        if top_strip:
+            hair_color = top_strip
+    hair_mat = _create_material("Hair_Mat", hair_color, roughness=0.7)
     hair.data.materials.append(hair_mat)
 
     # 8) 自动骨骼绑定

@@ -83,8 +83,8 @@ def add_primitive(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 2. 布尔运算
 # ---------------------------------------------------------------------------
 def boolean(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    target = H.require_object(payload["target"])
-    operand = H.require_object(payload["operand"])
+    target = H.require_mesh(H.require_object(payload["target"]), "布尔运算目标")
+    operand = H.require_mesh(H.require_object(payload["operand"]), "布尔运算操作体")
     operation = get_str(payload, "operation", "UNION")  # UNION / DIFFERENCE / INTERSECT
     if operation not in ("UNION", "DIFFERENCE", "INTERSECT"):
         raise ParamError(
@@ -103,7 +103,7 @@ def boolean(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 3. 挤出
 # ---------------------------------------------------------------------------
 def extrude(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "挤出")
     amount = get_float(payload, "amount", 0.1)
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
@@ -117,7 +117,7 @@ def extrude(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 4. 环切
 # ---------------------------------------------------------------------------
 def loop_cut(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "环切")
     cuts = get_int(payload, "cuts", 1)
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
@@ -209,7 +209,7 @@ def remesh(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 10. 内插面
 # ---------------------------------------------------------------------------
 def inset(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "内插面")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -248,7 +248,7 @@ def decimate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 13. 法线统一
 # ---------------------------------------------------------------------------
 def recalc_normals(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "法线统一")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -285,7 +285,7 @@ def align(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 16. 法线翻转
 # ---------------------------------------------------------------------------
 def flip_normals(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "法线翻转")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -379,7 +379,7 @@ def mirror(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 22. 焊接（按距离合并顶点）
 # ---------------------------------------------------------------------------
 def weld(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "焊接顶点")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -401,7 +401,7 @@ def smooth(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 24. UV 自动展开
 # ---------------------------------------------------------------------------
 def uv_unwrap(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "UV 展开")
     version_compat.set_active(obj)
     bpy.ops.object.mode_set(mode="EDIT")
     bpy.ops.mesh.select_all(action="SELECT")
@@ -454,20 +454,55 @@ def duplicate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
 # 28. 合并多对象到目标（角色部件 / 场景道具整合）
 # ---------------------------------------------------------------------------
 def join(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    target = H.require_object(payload["object"])
-    members = [m for m in H.list_objects(payload.get("objects")) if m != target]
+    target = H.require_mesh(H.require_object(payload["object"]), "合并到目标")
+    # 二次复核成员：剔除已失效句柄与非网格对象（曲线 / 骨架 / 灯光 / 相机），
+    # 避免触碰失效 RNA 或在非网格对象上触发构造性算子错误。
+    members: List[bpy.types.Object] = []
+    skipped: List[Dict[str, Any]] = []
+    for m in H.list_objects(payload.get("objects")):
+        if m == target:
+            continue
+        if not H.is_object_alive(m):
+            skipped.append({"name": getattr(m, "name", "<失效>"),
+                            "reason": "对象引用已失效"})
+            continue
+        if m.type != "MESH":
+            skipped.append({"name": m.name, "type": m.type,
+                            "reason": "非网格对象，已跳过（可先调用 mesh.convert）"})
+            continue
+        members.append(m)
+    H.deselect_all()
     version_compat.set_active(target)
     for m in members:
         m.select_set(True)
     bpy.ops.object.join()
-    return {"object": target.name, "joined": [m.name for m in members]}
+    return {"object": target.name,
+            "joined": [m.name for m in members], "skipped": skipped}
+
+
+# ---------------------------------------------------------------------------
+# 28b. 曲线 / 文字 / 元球转网格（网格类操作前置步骤）
+# ---------------------------------------------------------------------------
+def convert(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
+    """将 CURVE / FONT / META / SURFACE 对象转换为网格对象。"""
+    obj = H.require_object(payload["object"])
+    if obj.type == "MESH":
+        return {"object": obj.name, "converted": False, "type": "MESH"}
+    if obj.type not in ("CURVE", "FONT", "META", "SURFACE"):
+        raise ParamError(f"类型 {obj.type} 不支持转换为网格")
+    H.deselect_all()
+    obj.select_set(True)
+    version_compat.set_active(obj)
+    bpy.ops.object.convert(target="MESH")
+    new_obj = bpy.context.active_object
+    return {"object": new_obj.name, "converted": True, "type": new_obj.type}
 
 
 # ---------------------------------------------------------------------------
 # 29. 按松散块分离
 # ---------------------------------------------------------------------------
 def separate(payload: Dict[str, Any], ctx) -> Dict[str, Any]:
-    obj = H.require_object(payload["object"])
+    obj = H.require_mesh(H.require_object(payload["object"]), "分离")
     sep_type = get_str(payload, "type", "LOOSE")
     if sep_type not in ("LOOSE", "MATERIAL", "SELECTION"):
         raise ParamError(f"分离类型非法: {sep_type}（LOOSE / MATERIAL / SELECTION）")
@@ -608,6 +643,7 @@ def register(dispatcher) -> None:
     dispatcher.register("mesh.transform", transform, ["object"])
     dispatcher.register("mesh.duplicate", duplicate, ["object"])
     dispatcher.register("mesh.join", join, ["object"])
+    dispatcher.register("mesh.convert", convert, ["object"])
     dispatcher.register("mesh.separate", separate, ["object"])
     dispatcher.register("mesh.screw", screw, ["object"])
     dispatcher.register("mesh.wireframe", wireframe, ["object"])
